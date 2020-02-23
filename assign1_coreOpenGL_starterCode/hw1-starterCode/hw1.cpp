@@ -58,8 +58,8 @@ int mode = 1;
 int imageWidth = 0;
 int imageHeight = 0;
 
-GLuint pointVBO, wireVBO, solidVBO; // VBOs
-GLuint pointVAO, wireVAO, solidVAO; // VAOs
+GLuint pointVBO, smoothVBO; // VBOs
+GLuint pointVAO, wireVAO, solidVAO, smoothVAO; // VAOs
 
 GLuint wireEBO;
 GLuint solidEBO;
@@ -71,6 +71,7 @@ int pointNumVertex = 0, wireNumVertex = 0, solidNumVertex = 0;
 OpenGLMatrix matrix;
 BasicPipelineProgram * pipelineProgram;
 
+int frame_cnt = 0;
 
 void renderPoints();
 void renderWireframe();
@@ -120,9 +121,17 @@ void displayFunc()
   GLint h_modelViewMatrix = glGetUniformLocation(program, "modelViewMatrix"); 
   // get a handle to the projectionMatrix shader variable
   GLint h_projectionMatrix = glGetUniformLocation(program, "projectionMatrix"); 
+  // Get handle to mode shader variable
+  GLint h_mode = glGetUniformLocation(program, "mode");
 
   // bind shader
   pipelineProgram->Bind();
+  // Update mode variable accordingly
+  if (mode == 4) {
+    glUniform1i(h_mode, 1);
+  } else {
+    glUniform1i(h_mode, 0);
+  }
 
   // Upload matrices to GPU
   GLboolean isRowMajor = GL_FALSE;
@@ -147,6 +156,7 @@ void displayFunc()
     break;
 
     case 4:
+      renderSmooth();
     break;
 
     default:
@@ -161,9 +171,12 @@ void idleFunc()
 {
   // TODO
   // do some stuff... 
-
   // for example, here, you can save the screenshots to disk (to make the animation)
+  if (frame_cnt % 4 == 0) {
+    
+  }
 
+  ++frame_cnt;
   // make the screen update 
   glutPostRedisplay();
 }
@@ -299,7 +312,6 @@ void keyboardFunc(unsigned char key, int x, int y)
       cout << "You pressed the spacebar." << endl;
     break;
 
-    // TODO: Add more cases
     case '1': // Points mode
       cout << "Pressed key 1." << endl;
       mode = 1;
@@ -351,7 +363,9 @@ void renderSolid() {
 }
 
 void renderSmooth() {
-
+  glBindVertexArray(smoothVAO);
+  glDrawElements(GL_TRIANGLE_STRIP, solidIdxCnt, GL_UNSIGNED_INT, (void*)0);
+  glBindVertexArray(0);
 }
 
 void initScene(int argc, char *argv[])
@@ -390,7 +404,7 @@ void initScene(int argc, char *argv[])
   for (int x=0; x<imageWidth; ++x) {
     for (int y=0; y<imageHeight; ++y) {
       double curr_color = (int)heightmapImage->getPixel(x, y, 0) / 255.0;
-      pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, (double)(y - imageHeight/2.0) / imageHeight * 4, curr_color);
+      pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 2, (double)(y - imageHeight/2.0) / imageHeight * 2, curr_color);
       pointColors[y * imageWidth + x] = glm::vec4(curr_color, curr_color, curr_color, 1);
     }
   }
@@ -427,8 +441,8 @@ void initScene(int argc, char *argv[])
   glBindVertexArray(0); // Unbind the VAO
   glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
 
-  delete [] pointPositions;
-  delete [] pointColors;
+  // delete [] pointPositions;
+  // delete [] pointColors;
   /*
     ============================================= Start Mode 2 =========================================
   */
@@ -533,6 +547,123 @@ void initScene(int argc, char *argv[])
   glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
 
+  /*
+    ============================================= Start Mode 4 =========================================
+  */
+  // Create data
+  // glm::vec3* smoothPositions = new glm::vec3[pointNumVertex];
+  // glm::vec4* smoothColors = new glm::vec4[pointNumVertex];
+  // for (int x=0; x<imageWidth; ++x) {
+  //   for (int y=0; y<imageHeight; ++y) {
+  //     double curr_color = (int)heightmapImage->getPixel(x, y, 0) / 255.0;
+  //     smoothPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, (double)(y - imageHeight/2.0) / imageHeight * 4, curr_color);
+  //     smoothColors[y * imageWidth + x] = glm::vec4(curr_color, curr_color, curr_color, 1);
+  //   }
+  // }
+  // Create neighbors arrays
+  glm::vec3* upPositions = new glm::vec3[pointNumVertex];
+  glm::vec3* downPositions = new glm::vec3[pointNumVertex];
+  glm::vec3* leftPositions = new glm::vec3[pointNumVertex];
+  glm::vec3* rightPositions = new glm::vec3[pointNumVertex];
+  for (int x=0; x<imageWidth; ++x) {
+    for (int y=0; y<imageHeight; ++y) {
+      if (y + 1 < imageHeight) {
+        upPositions[y * imageWidth + x] = pointPositions[(y + 1) * imageWidth + x];
+      } else {
+        upPositions[y * imageWidth + x] = pointPositions[y * imageWidth + x];
+      }
+      if (y - 1 >= 0) {
+        downPositions[y * imageWidth + x] = pointPositions[(y - 1) * imageWidth + x];
+      } else {
+        downPositions[y * imageWidth + x] = pointPositions[y * imageWidth + x];
+      }
+      if (x - 1 >= 0) {
+        leftPositions[y * imageWidth + x] = pointPositions[y * imageWidth + x - 1];
+      } else {
+        leftPositions[y * imageWidth + x] = pointPositions[y * imageWidth + x];
+      }
+      if (x + 1 < imageWidth) {
+        leftPositions[y * imageWidth + x] = pointPositions[y * imageWidth + x + 1];
+      } else {
+        leftPositions[y * imageWidth + x] = pointPositions[y * imageWidth + x];
+      }
+    }
+  }
+  // Set positions VBO
+  glGenBuffers(1, &smoothVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, smoothVBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex * 5 + sizeof(glm::vec4) * pointNumVertex, nullptr, GL_STATIC_DRAW);
+  // Upload position data
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * pointNumVertex, pointPositions);
+  // Upload color data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex, sizeof(glm::vec4) * pointNumVertex, pointColors);
+  // Upload position_up data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex + sizeof(glm::vec4) * pointNumVertex, sizeof(glm::vec3) * pointNumVertex, upPositions);
+  // Upload position_down data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex * 2 + sizeof(glm::vec4) * pointNumVertex, sizeof(glm::vec3) * pointNumVertex, downPositions);
+  // Upload position_left data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex * 3 + sizeof(glm::vec4) * pointNumVertex, sizeof(glm::vec3) * pointNumVertex, leftPositions);
+  // Upload position_right data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex * 4 + sizeof(glm::vec4) * pointNumVertex, sizeof(glm::vec3) * pointNumVertex, rightPositions);
+
+  glGenVertexArrays(1, &smoothVAO);
+  glBindVertexArray(smoothVAO);
+
+  // Bind pointVBO
+  glBindBuffer(GL_ARRAY_BUFFER, smoothVBO);
+  // Set "position" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
+  glEnableVertexAttribArray(loc); 
+  unsigned long off_size = 0;
+  offset = (const void*) off_size;
+  stride = 0;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
+  glEnableVertexAttribArray(loc);
+  off_size += (sizeof(glm::vec3) * pointNumVertex);
+  offset = (const void*) off_size;
+  glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position_up");
+  glEnableVertexAttribArray(loc);
+  off_size += (sizeof(glm::vec4) * pointNumVertex); // this is for color
+  offset = (const void*) off_size;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position_down");
+  glEnableVertexAttribArray(loc);
+  off_size += (sizeof(glm::vec3) * pointNumVertex);
+  offset = (const void*) off_size;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position_left");
+  glEnableVertexAttribArray(loc);
+  off_size += (sizeof(glm::vec3) * pointNumVertex);
+  offset = (const void*) off_size;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position_right");
+  glEnableVertexAttribArray(loc);
+  off_size += (sizeof(glm::vec3) * pointNumVertex);
+  offset = (const void*) off_size;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+
+  // Bind EBO: --------------------------------------> EXTRA CREDIT!!
+	glGenBuffers(1, &solidEBO);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, solidEBO);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * solidIdxCnt, solidIndex, GL_STATIC_DRAW);
+
+  glBindVertexArray(0); // Unbind the VAO
+  glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
+
+  delete [] upPositions;
+  delete [] downPositions;
+  delete [] leftPositions;
+  delete [] rightPositions;
+  delete [] pointPositions;
+  delete [] pointColors;
   delete [] solidIndex;
 
   glEnable(GL_DEPTH_TEST);
