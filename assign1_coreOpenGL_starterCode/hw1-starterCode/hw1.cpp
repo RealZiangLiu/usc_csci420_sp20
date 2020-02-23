@@ -4,6 +4,7 @@
   C++ starter code
 
   Student username: ziangliu
+  ID: 9114346039
 */
 
 #include "basicPipelineProgram.h"
@@ -49,11 +50,16 @@ int windowWidth = 1280;
 int windowHeight = 720;
 char windowTitle[512] = "CSCI 420 homework I";
 
-ImageIO * heightmapImage;
+ImageIO * heightmapImage; // Grayscale image range: (0, 255)
 
-GLuint triVertexBuffer, triColorVertexBuffer;
-GLuint triVertexArray;
-int sizeTri;
+int imageWidth = 0;
+int imageHeight = 0;
+
+GLuint pointPositionsBuffer, pointColorsBuffer; // VBO's
+GLuint wirePositionsBuffer, wireColorsBuffer;
+GLuint solidPositionsBuffer, solidColorsBuffer;
+GLuint pointVertexArray, wireVertexArray, solidVertexArray;  // VAOs
+int numVertex = 0;
 
 OpenGLMatrix matrix;
 BasicPipelineProgram * pipelineProgram;
@@ -83,28 +89,47 @@ void displayFunc()
   matrix.LookAt(0, 0, 5, 0, 0, 0, 0, 1, 0);
 
   float m[16];
-  matrix.SetMatrixMode(OpenGLMatrix::ModelView);
+  // matrix.SetMatrixMode(OpenGLMatrix::ModelView);
+  matrix.Translate(landTranslate[0], landTranslate[1], landTranslate[2]);
+  matrix.Rotate(landRotate[0], 1, 0, 0);
+  matrix.Rotate(landRotate[1], 0, 1, 0);
+  matrix.Rotate(landRotate[2], 0, 0, 1);
+  matrix.Scale(landScale[0], landScale[1], landScale[2]);
   matrix.GetMatrix(m);
 
-  float p[16];
+  float p[16];  // Column-major
   matrix.SetMatrixMode(OpenGLMatrix::Projection);
   matrix.GetMatrix(p);
-  //
+
+  // get a handle to the program
+  GLuint program = pipelineProgram->GetProgramHandle();
+  // get a handle to the modelViewMatrix shader variable
+  GLint h_modelViewMatrix = glGetUniformLocation(program, "modelViewMatrix"); 
+  // get a handle to the projectionMatrix shader variable
+  GLint h_projectionMatrix = glGetUniformLocation(program, "projectionMatrix"); 
+
   // bind shader
   pipelineProgram->Bind();
+
+  // Upload matrices to GPU
+  GLboolean isRowMajor = GL_FALSE;
+  glUniformMatrix4fv(h_modelViewMatrix, 1, isRowMajor, m);
+  glUniformMatrix4fv(h_projectionMatrix, 1, isRowMajor, p);
 
   // set variable
   pipelineProgram->SetModelViewMatrix(m);
   pipelineProgram->SetProjectionMatrix(p);
 
-  glBindVertexArray(triVertexArray);
-  glDrawArrays(GL_TRIANGLES, 0, sizeTri);
+  glBindVertexArray(pointVertexArray);
+  // glDrawArrays(GL_TRIANGLES, 0, numVertex);
+  glDrawArrays(GL_LINES, 0, numVertex);
 
   glutSwapBuffers();
 }
 
 void idleFunc()
 {
+  // TODO
   // do some stuff... 
 
   // for example, here, you can save the screenshots to disk (to make the animation)
@@ -116,10 +141,10 @@ void idleFunc()
 void reshapeFunc(int w, int h)
 {
   glViewport(0, 0, w, h);
-
   matrix.SetMatrixMode(OpenGLMatrix::Projection);
   matrix.LoadIdentity();
   matrix.Perspective(54.0f, (float)w / (float)h, 0.01f, 100.0f);
+  matrix.SetMatrixMode(OpenGLMatrix::ModelView);
 }
 
 void mouseMotionDragFunc(int x, int y)
@@ -213,11 +238,12 @@ void mouseButtonFunc(int button, int state, int x, int y)
   // keep track of whether CTRL and SHIFT keys are pressed
   switch (glutGetModifiers())
   {
-    case GLUT_ACTIVE_CTRL:
+    case GLUT_ACTIVE_SHIFT:
       controlState = TRANSLATE;
+      cout << "In translation mode!" << endl;
     break;
 
-    case GLUT_ACTIVE_SHIFT:
+    case GLUT_ACTIVE_CTRL:
       controlState = SCALE;
     break;
 
@@ -244,6 +270,23 @@ void keyboardFunc(unsigned char key, int x, int y)
       cout << "You pressed the spacebar." << endl;
     break;
 
+    // TODO: Add more cases
+    case '1': // Points mode
+      cout << "Pressed key 1." << endl;
+    break;
+
+    case '2': // Lines mode
+      cout << "Pressed key 2." << endl;
+    break;
+
+    case '3': // Solid triangles mode
+      cout << "Pressed key 3." << endl;
+    break;
+
+    case '4': // Smooth mode
+      cout << "Pressed key 4." << endl;
+    break;
+
     case 'x':
       // take a screenshot
       saveScreenshot("screenshot.jpg");
@@ -261,51 +304,76 @@ void initScene(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }
 
+  imageWidth = heightmapImage->getWidth();
+  imageHeight = heightmapImage->getHeight();
+  numVertex = imageWidth * imageHeight;
+
   glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
-  // modify the following code accordingly
-  glm::vec3 triangle[3] = {
-    glm::vec3(0, 0, 0), 
-    glm::vec3(0, 1, 0),
-    glm::vec3(1, 0, 0)
-  };
+  // TODO: modify the following code accordingly
+  // glm::vec3 triangle[3] = {
+  //   glm::vec3(0, 0, 0), 
+  //   glm::vec3(0, 1, 0),
+  //   glm::vec3(1, 0, 0)
+  // };
+  glm::vec3 pointVertices[numVertex];
+  glm::vec4 pointColor[numVertex];
 
-  glm::vec4 color[3] = {
-    {0, 0, 1, 1},
-    {1, 0, 0, 1},
-    {0, 1, 0, 1},
-  };
+  for (int x=0; x<imageWidth; ++x) {
+    for (int y=0; y<imageHeight; ++y) {
+      pointVertices[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, (double)(y - imageHeight/2.0) / imageHeight * 4, (int)heightmapImage->getPixel(x, y, 0) / 255.0);
+      pointColor[y * imageWidth + x] = glm::vec4(1, 1, 1, 1);
+    }
+  }
 
-  glGenBuffers(1, &triVertexBuffer);
-  glBindBuffer(GL_ARRAY_BUFFER, triVertexBuffer);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * 3, triangle,
+  // glm::vec4 color[3] = {
+  //   {0, 0, 1, 1},
+  //   {1, 0, 0, 1},
+  //   {0, 1, 0, 1},
+  // };
+
+  /*
+    Mode 1: Set positions VBO
+  */
+  glGenBuffers(1, &pointPositionsBuffer);
+  glBindBuffer(GL_ARRAY_BUFFER, pointPositionsBuffer);
+  // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * 3, triangle,
+  //              GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * numVertex, pointVertices,
                GL_STATIC_DRAW);
+  /*
+    Mode 1: Set colors VBO
+  */
+  glGenBuffers(1, &pointColorsBuffer);
+  glBindBuffer(GL_ARRAY_BUFFER, pointColorsBuffer);
+  // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * 3, color, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * numVertex, pointColor, GL_STATIC_DRAW);
 
-  glGenBuffers(1, &triColorVertexBuffer);
-  glBindBuffer(GL_ARRAY_BUFFER, triColorVertexBuffer);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * 3, color, GL_STATIC_DRAW);
-
+  /*
+    Initialize pipelineProgram
+  */
   pipelineProgram = new BasicPipelineProgram;
   int ret = pipelineProgram->Init(shaderBasePath);
   if (ret != 0) abort();
 
-  glGenVertexArrays(1, &triVertexArray);
-  glBindVertexArray(triVertexArray);
-  glBindBuffer(GL_ARRAY_BUFFER, triVertexBuffer);
+  glGenVertexArrays(1, &pointVertexArray);
+  glBindVertexArray(pointVertexArray);
+  glBindBuffer(GL_ARRAY_BUFFER, pointVertexArray);
 
   GLuint loc =
       glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
   glEnableVertexAttribArray(loc);
   glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, (const void *)0);
 
-  glBindBuffer(GL_ARRAY_BUFFER, triColorVertexBuffer);
+  glBindBuffer(GL_ARRAY_BUFFER, pointColorsBuffer);
   loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
   glEnableVertexAttribArray(loc);
   glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 0, (const void *)0);
 
   glEnable(GL_DEPTH_TEST);
 
-  sizeTri = 3;
+  // numVertex = 3;
+  cout << "numVertex: " << numVertex << endl;
 
   std::cout << "GL error: " << glGetError() << std::endl;
 }
