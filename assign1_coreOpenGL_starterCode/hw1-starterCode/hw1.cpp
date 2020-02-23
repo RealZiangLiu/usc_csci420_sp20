@@ -15,6 +15,7 @@
 
 #include <iostream>
 #include <cstring>
+#include <vector>
 
 #if defined(WIN32) || defined(_WIN32)
   #ifdef _DEBUG
@@ -52,17 +53,29 @@ char windowTitle[512] = "CSCI 420 homework I";
 
 ImageIO * heightmapImage; // Grayscale image range: (0, 255)
 
+int mode = 1;
+
 int imageWidth = 0;
 int imageHeight = 0;
 
-GLuint pointPositionsBuffer, pointColorsBuffer; // VBO's
-GLuint wirePositionsBuffer, wireColorsBuffer;
-GLuint solidPositionsBuffer, solidColorsBuffer;
-GLuint pointVertexArray, wireVertexArray, solidVertexArray;  // VAOs
-int numVertex = 0;
+GLuint pointVBO, wireVBO, solidVBO; // VBOs
+GLuint pointVAO, wireVAO, solidVAO; // VAOs
+
+GLuint wireEBO;
+GLuint solidEBO;
+
+int wireIdxCnt = 0, solidIdxCnt = 0;
+
+int pointNumVertex = 0, wireNumVertex = 0, solidNumVertex = 0;
 
 OpenGLMatrix matrix;
 BasicPipelineProgram * pipelineProgram;
+
+
+void renderPoints();
+void renderWireframe();
+void renderSolid();
+void renderSmooth();
 
 // write a screenshot to the specified filename
 void saveScreenshot(const char * filename)
@@ -120,9 +133,26 @@ void displayFunc()
   pipelineProgram->SetModelViewMatrix(m);
   pipelineProgram->SetProjectionMatrix(p);
 
-  glBindVertexArray(pointVertexArray);
-  // glDrawArrays(GL_TRIANGLES, 0, numVertex);
-  glDrawArrays(GL_LINES, 0, numVertex);
+  switch(mode) {
+    case 1:
+      renderPoints();
+    break;
+
+    case 2:
+      renderWireframe();
+    break;
+
+    case 3:
+      renderSolid();
+    break;
+
+    case 4:
+    break;
+
+    default:
+      renderPoints();
+    break;
+  }
 
   glutSwapBuffers();
 }
@@ -238,12 +268,11 @@ void mouseButtonFunc(int button, int state, int x, int y)
   // keep track of whether CTRL and SHIFT keys are pressed
   switch (glutGetModifiers())
   {
-    case GLUT_ACTIVE_SHIFT:
+    case GLUT_ACTIVE_CTRL:
       controlState = TRANSLATE;
-      cout << "In translation mode!" << endl;
     break;
 
-    case GLUT_ACTIVE_CTRL:
+    case GLUT_ACTIVE_SHIFT:
       controlState = SCALE;
     break;
 
@@ -273,18 +302,26 @@ void keyboardFunc(unsigned char key, int x, int y)
     // TODO: Add more cases
     case '1': // Points mode
       cout << "Pressed key 1." << endl;
+      mode = 1;
     break;
 
     case '2': // Lines mode
       cout << "Pressed key 2." << endl;
+      mode = 2;
     break;
 
     case '3': // Solid triangles mode
       cout << "Pressed key 3." << endl;
+      mode = 3;
     break;
 
     case '4': // Smooth mode
       cout << "Pressed key 4." << endl;
+      mode = 4;
+    break;
+
+    case 'z': // Translate
+      controlState = TRANSLATE;
     break;
 
     case 'x':
@@ -292,6 +329,29 @@ void keyboardFunc(unsigned char key, int x, int y)
       saveScreenshot("screenshot.jpg");
     break;
   }
+}
+
+
+void renderPoints() {
+  glBindVertexArray(pointVAO);
+  glDrawArrays(GL_POINTS, 0, pointNumVertex);
+  glBindVertexArray(0);
+}
+
+void renderWireframe() {
+  glBindVertexArray(wireVAO);
+  glDrawElements(GL_LINES, wireIdxCnt, GL_UNSIGNED_INT, (void*)0);
+  glBindVertexArray(0);
+}
+
+void renderSolid() {
+  glBindVertexArray(solidVAO);
+  glDrawElements(GL_TRIANGLE_STRIP, solidIdxCnt, GL_UNSIGNED_INT, (void*)0);
+  glBindVertexArray(0);
+}
+
+void renderSmooth() {
+
 }
 
 void initScene(int argc, char *argv[])
@@ -306,48 +366,12 @@ void initScene(int argc, char *argv[])
 
   imageWidth = heightmapImage->getWidth();
   imageHeight = heightmapImage->getHeight();
-  numVertex = imageWidth * imageHeight;
+
+  // Set numVertices
+  pointNumVertex = imageWidth * imageHeight;
+  wireNumVertex = imageWidth * imageHeight * 2;
 
   glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-
-  // TODO: modify the following code accordingly
-  // glm::vec3 triangle[3] = {
-  //   glm::vec3(0, 0, 0), 
-  //   glm::vec3(0, 1, 0),
-  //   glm::vec3(1, 0, 0)
-  // };
-  glm::vec3 pointVertices[numVertex];
-  glm::vec4 pointColor[numVertex];
-
-  for (int x=0; x<imageWidth; ++x) {
-    for (int y=0; y<imageHeight; ++y) {
-      pointVertices[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, (double)(y - imageHeight/2.0) / imageHeight * 4, (int)heightmapImage->getPixel(x, y, 0) / 255.0);
-      pointColor[y * imageWidth + x] = glm::vec4(1, 1, 1, 1);
-    }
-  }
-
-  // glm::vec4 color[3] = {
-  //   {0, 0, 1, 1},
-  //   {1, 0, 0, 1},
-  //   {0, 1, 0, 1},
-  // };
-
-  /*
-    Mode 1: Set positions VBO
-  */
-  glGenBuffers(1, &pointPositionsBuffer);
-  glBindBuffer(GL_ARRAY_BUFFER, pointPositionsBuffer);
-  // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * 3, triangle,
-  //              GL_STATIC_DRAW);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * numVertex, pointVertices,
-               GL_STATIC_DRAW);
-  /*
-    Mode 1: Set colors VBO
-  */
-  glGenBuffers(1, &pointColorsBuffer);
-  glBindBuffer(GL_ARRAY_BUFFER, pointColorsBuffer);
-  // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * 3, color, GL_STATIC_DRAW);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * numVertex, pointColor, GL_STATIC_DRAW);
 
   /*
     Initialize pipelineProgram
@@ -356,24 +380,162 @@ void initScene(int argc, char *argv[])
   int ret = pipelineProgram->Init(shaderBasePath);
   if (ret != 0) abort();
 
-  glGenVertexArrays(1, &pointVertexArray);
-  glBindVertexArray(pointVertexArray);
-  glBindBuffer(GL_ARRAY_BUFFER, pointVertexArray);
+  /*
+    ============================================= Start Mode 1 =========================================
+  */
+  // glm::vec3 pointPositions[pointNumVertex];
+  glm::vec3* pointPositions = new glm::vec3[pointNumVertex];
+  // glm::vec4 pointColors[pointNumVertex];
+  glm::vec4* pointColors = new glm::vec4[pointNumVertex];
+  for (int x=0; x<imageWidth; ++x) {
+    for (int y=0; y<imageHeight; ++y) {
+      double curr_color = (int)heightmapImage->getPixel(x, y, 0) / 255.0;
+      pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, (double)(y - imageHeight/2.0) / imageHeight * 4, curr_color);
+      pointColors[y * imageWidth + x] = glm::vec4(curr_color, curr_color, curr_color, 1);
+    }
+  }
+  // Set positions VBO
+  glGenBuffers(1, &pointVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
+  // glBufferData(GL_ARRAY_BUFFER, sizeof(pointPositions) + sizeof(pointColors), nullptr, GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex + sizeof(glm::vec4) * pointNumVertex, nullptr, GL_STATIC_DRAW);
+  // Upload position data
+  // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(pointPositions), pointPositions);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * pointNumVertex, pointPositions);
+  // Upload color data
+  // glBufferSubData(GL_ARRAY_BUFFER, sizeof(pointPositions), sizeof(pointColors), pointColors);
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex, sizeof(glm::vec4) * pointNumVertex, pointColors);
 
-  GLuint loc =
-      glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
-  glEnableVertexAttribArray(loc);
-  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, (const void *)0);
+  glGenVertexArrays(1, &pointVAO);
+  glBindVertexArray(pointVAO);
 
-  glBindBuffer(GL_ARRAY_BUFFER, pointColorsBuffer);
+  // Bind pointVBO
+  glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
+  // Set "position" layout
+  GLuint loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
+  glEnableVertexAttribArray(loc); 
+  const void * offset = (const void*) 0;
+  GLsizei stride = 0;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
   loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
   glEnableVertexAttribArray(loc);
-  glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 0, (const void *)0);
+  // offset = (const void*) sizeof(pointPositions);
+  offset = (const void*) (sizeof(glm::vec3) * pointNumVertex);
+  glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
+
+  glBindVertexArray(0); // Unbind the VAO
+  glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+
+  delete [] pointPositions;
+  delete [] pointColors;
+  /*
+    ============================================= Start Mode 2 =========================================
+  */
+  // Create index array
+  wireIdxCnt = ((imageHeight - 1) * imageWidth + (imageWidth - 1) * imageHeight) * 2;
+  // unsigned int wireIndex[wireIdxCnt];
+  unsigned int* wireIndex = new unsigned int[wireIdxCnt];
+  int pos = 0;
+  for (int x=0; x<imageWidth; ++x) {
+    for (int y=0; y<imageHeight; ++y) {
+      if (y + 1 < imageHeight) {
+        wireIndex[pos] = y * imageWidth + x;
+        wireIndex[pos+1] = (y + 1) * imageWidth + x;
+        pos += 2;
+      }
+      if (x + 1 < imageWidth) {
+        wireIndex[pos] = y * imageWidth + x;
+        wireIndex[pos+1] = y * imageWidth + (x + 1);
+        pos += 2;
+      }
+    }
+  }
+  // Create VAO
+  glGenVertexArrays(1, &wireVAO);
+  glBindVertexArray(wireVAO);
+
+  // Bind reused pointVBO
+  glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
+
+  // Set "position" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
+  glEnableVertexAttribArray(loc);
+  offset = (const void*) 0;
+  stride = 0;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
+  glEnableVertexAttribArray(loc);
+  // offset = (const void*) sizeof(pointPositions);
+  offset = (const void*) (sizeof(glm::vec3) * pointNumVertex);
+  glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
+
+  // Bind EBO: --------------------------------------> EXTRA CREDIT!!
+	glGenBuffers(1, &wireEBO);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, wireEBO);
+	// glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(wireIndex), wireIndex, GL_STATIC_DRAW);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * wireIdxCnt, wireIndex, GL_STATIC_DRAW);
+
+  glBindVertexArray(0); // Unbind the VAO
+  glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
+  
+  delete [] wireIndex;
+  /*
+    ============================================= Start Mode 3 =========================================
+  */
+  // Create index array
+  solidIdxCnt = pointNumVertex * 2 - 2 * imageWidth;
+  // unsigned int solidIndex[solidIdxCnt];
+  unsigned int* solidIndex = new unsigned int[solidIdxCnt];
+  pos = 0;
+  for (int y=0; y<imageHeight; ++y) {
+      if (y + 1 < imageHeight) {
+        for (int x=0; x<imageWidth; ++x) {
+          int magic = x;
+          if (y & 1) {
+            magic = imageWidth - 1 - x;
+          }
+          solidIndex[pos] = y * imageWidth + magic;
+          solidIndex[pos+1] = (y + 1) * imageWidth + magic;
+          pos += 2;
+        }
+      }
+  }
+  // Create VAO
+  glGenVertexArrays(1, &solidVAO);
+  glBindVertexArray(solidVAO);
+
+  // Bind reused pointVBO
+  glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
+
+  // Set "position" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
+  glEnableVertexAttribArray(loc);
+  offset = (const void*) 0;
+  stride = 0;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
+  glEnableVertexAttribArray(loc);
+  // offset = (const void*) sizeof(pointPositions);
+  offset = (const void*) (sizeof(glm::vec3) * pointNumVertex);
+  glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
+
+  // Bind EBO: --------------------------------------> EXTRA CREDIT!!
+	glGenBuffers(1, &solidEBO);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, solidEBO);
+	// glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(solidIndex), solidIndex, GL_STATIC_DRAW);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * solidIdxCnt, solidIndex, GL_STATIC_DRAW);
+
+  glBindVertexArray(0); // Unbind the VAO
+  glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
+
+  delete [] solidIndex;
 
   glEnable(GL_DEPTH_TEST);
-
-  // numVertex = 3;
-  cout << "numVertex: " << numVertex << endl;
 
   std::cout << "GL error: " << glGetError() << std::endl;
 }
