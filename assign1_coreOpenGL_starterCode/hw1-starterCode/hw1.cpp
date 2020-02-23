@@ -15,6 +15,7 @@
 
 #include <iostream>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #if defined(WIN32) || defined(_WIN32)
@@ -55,11 +56,13 @@ ImageIO * heightmapImage; // Grayscale image range: (0, 255)
 
 int mode = 1;
 
+int record_animation = 0;
+
 int imageWidth = 0;
 int imageHeight = 0;
 
-GLuint pointVBO, smoothVBO; // VBOs
-GLuint pointVAO, wireVAO, solidVAO, smoothVAO; // VAOs
+GLuint pointVBO, smoothVBO, overlayVBO, binaryVBO; // VBOs
+GLuint pointVAO, wireVAO, solidVAO, smoothVAO, overlayVAO, binaryVAO; // VAOs
 
 GLuint wireEBO;
 GLuint solidEBO;
@@ -77,6 +80,8 @@ void renderPoints();
 void renderWireframe();
 void renderSolid();
 void renderSmooth();
+void renderOverlay();
+void renderBinary();
 
 // write a screenshot to the specified filename
 void saveScreenshot(const char * filename)
@@ -129,6 +134,8 @@ void displayFunc()
   // Update mode variable accordingly
   if (mode == 4) {
     glUniform1i(h_mode, 1);
+  } else if (mode == 6) { // binary
+    glUniform1i(h_mode, 2);
   } else {
     glUniform1i(h_mode, 0);
   }
@@ -159,6 +166,14 @@ void displayFunc()
       renderSmooth();
     break;
 
+    case 5:
+      renderOverlay();
+    break;
+
+    case 6:
+      renderBinary();
+    break;
+
     default:
       renderPoints();
     break;
@@ -169,14 +184,22 @@ void displayFunc()
 
 void idleFunc()
 {
-  // TODO
-  // do some stuff... 
-  // for example, here, you can save the screenshots to disk (to make the animation)
-  if (frame_cnt % 4 == 0) {
-    
+  if (record_animation == 1) {
+    // Save screenshots for animation
+    if (frame_cnt % 4 == 0) {
+      string file_path = "screenshots/";
+      string id;
+      int t = frame_cnt / 4;
+      for (int i=0; i<3; ++i) {
+        id += to_string(t % 10);
+        t /= 10;
+      }
+      reverse(id.begin(), id.end());
+      file_path += (id + ".jpg");
+      saveScreenshot(file_path.c_str());
+    }
+    ++frame_cnt;
   }
-
-  ++frame_cnt;
   // make the screen update 
   glutPostRedisplay();
 }
@@ -332,6 +355,16 @@ void keyboardFunc(unsigned char key, int x, int y)
       mode = 4;
     break;
 
+    case '5': // wireframe overlay mode
+      cout << "Pressed key 5." << endl;
+      mode = 5;
+    break;
+
+    case '6': // binary mode
+      cout << "Pressed key 6." << endl;
+      mode = 6;
+    break;
+    
     case 'z': // Translate
       controlState = TRANSLATE;
     break;
@@ -339,6 +372,11 @@ void keyboardFunc(unsigned char key, int x, int y)
     case 'x':
       // take a screenshot
       saveScreenshot("screenshot.jpg");
+    break;
+
+    case 's':
+      // Start capture animation
+      record_animation = (1 - record_animation);
     break;
   }
 }
@@ -364,6 +402,25 @@ void renderSolid() {
 
 void renderSmooth() {
   glBindVertexArray(smoothVAO);
+  glDrawElements(GL_TRIANGLE_STRIP, solidIdxCnt, GL_UNSIGNED_INT, (void*)0);
+  glBindVertexArray(0);
+}
+
+void renderOverlay() {
+  glEnable(GL_POLYGON_OFFSET_FILL);
+  glPolygonOffset(0.0f, 1.0f);
+  glBindVertexArray(solidVAO);
+  glDrawElements(GL_TRIANGLE_STRIP, solidIdxCnt, GL_UNSIGNED_INT, (void*)0);
+  glDisable(GL_POLYGON_OFFSET_FILL);
+
+  glBindVertexArray(overlayVAO);
+  glDrawElements(GL_LINES, wireIdxCnt, GL_UNSIGNED_INT, (void*)0);
+
+  glBindVertexArray(0);
+}
+
+void renderBinary() {
+  glBindVertexArray(binaryVAO);
   glDrawElements(GL_TRIANGLE_STRIP, solidIdxCnt, GL_UNSIGNED_INT, (void*)0);
   glBindVertexArray(0);
 }
@@ -399,13 +456,20 @@ void initScene(int argc, char *argv[])
   */
   // glm::vec3 pointPositions[pointNumVertex];
   glm::vec3* pointPositions = new glm::vec3[pointNumVertex];
+  // Binary positions
+  glm::vec3* binaryPositions = new glm::vec3[pointNumVertex];
   // glm::vec4 pointColors[pointNumVertex];
   glm::vec4* pointColors = new glm::vec4[pointNumVertex];
+  // Overlay wireframe color
+  glm::vec4* overlayColors = new glm::vec4[pointNumVertex];
   for (int x=0; x<imageWidth; ++x) {
     for (int y=0; y<imageHeight; ++y) {
       double curr_color = (int)heightmapImage->getPixel(x, y, 0) / 255.0;
+      double binary_color = (curr_color >= 0.5 ? 1.0 : 0.0);
       pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 2, (double)(y - imageHeight/2.0) / imageHeight * 2, curr_color);
+      binaryPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 2, (double)(y - imageHeight/2.0) / imageHeight * 2, binary_color);
       pointColors[y * imageWidth + x] = glm::vec4(curr_color, curr_color, curr_color, 1);
+      overlayColors[y * imageWidth + x] = glm::vec4(0.2 * curr_color, 0.3 * curr_color, 0.9 * curr_color, 1.0);
     }
   }
   // Set positions VBO
@@ -495,7 +559,7 @@ void initScene(int argc, char *argv[])
   glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
   
-  delete [] wireIndex;
+  // delete [] wireIndex;
   /*
     ============================================= Start Mode 3 =========================================
   */
@@ -550,16 +614,6 @@ void initScene(int argc, char *argv[])
   /*
     ============================================= Start Mode 4 =========================================
   */
-  // Create data
-  // glm::vec3* smoothPositions = new glm::vec3[pointNumVertex];
-  // glm::vec4* smoothColors = new glm::vec4[pointNumVertex];
-  // for (int x=0; x<imageWidth; ++x) {
-  //   for (int y=0; y<imageHeight; ++y) {
-  //     double curr_color = (int)heightmapImage->getPixel(x, y, 0) / 255.0;
-  //     smoothPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, (double)(y - imageHeight/2.0) / imageHeight * 4, curr_color);
-  //     smoothColors[y * imageWidth + x] = glm::vec4(curr_color, curr_color, curr_color, 1);
-  //   }
-  // }
   // Create neighbors arrays
   glm::vec3* upPositions = new glm::vec3[pointNumVertex];
   glm::vec3* downPositions = new glm::vec3[pointNumVertex];
@@ -658,12 +712,86 @@ void initScene(int argc, char *argv[])
   glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
 
+  /*
+    ============================================= Start Mode 5 : EXTRA CREDIT: wireframe overlay =========================================
+  */
+  // Set positions VBO
+  glGenBuffers(1, &overlayVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, overlayVBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex + sizeof(glm::vec4) * pointNumVertex, nullptr, GL_STATIC_DRAW);
+  // Upload position data
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * pointNumVertex, pointPositions);
+  // Upload color data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex, sizeof(glm::vec4) * pointNumVertex, overlayColors);
+
+  glGenVertexArrays(1, &overlayVAO);
+  glBindVertexArray(overlayVAO);
+
+  // Bind overlayVBO
+  glBindBuffer(GL_ARRAY_BUFFER, overlayVBO);
+  // Set "position" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
+  glEnableVertexAttribArray(loc); 
+  offset = (const void*) 0;
+  stride = 0;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
+  glEnableVertexAttribArray(loc);
+  // offset = (const void*) sizeof(pointPositions);
+  offset = (const void*) (sizeof(glm::vec3) * pointNumVertex);
+  glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, wireEBO);
+
+  glBindVertexArray(0); // Unbind the VAO
+  glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
+
+  /*
+    ============================================= Start Mode 6 : Binary mapping =========================================
+  */
+  // Set positions VBO
+  glGenBuffers(1, &binaryVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, binaryVBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex + sizeof(glm::vec4) * pointNumVertex, nullptr, GL_STATIC_DRAW);
+  // Upload position data
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * pointNumVertex, binaryPositions);
+  // Upload color data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex, sizeof(glm::vec4) * pointNumVertex, pointColors);
+
+  glGenVertexArrays(1, &binaryVAO);
+  glBindVertexArray(binaryVAO);
+
+  // Bind overlayVBO
+  glBindBuffer(GL_ARRAY_BUFFER, binaryVBO);
+  // Set "position" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
+  glEnableVertexAttribArray(loc); 
+  offset = (const void*) 0;
+  stride = 0;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "color" layout
+  loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
+  glEnableVertexAttribArray(loc);
+  // offset = (const void*) sizeof(pointPositions);
+  offset = (const void*) (sizeof(glm::vec3) * pointNumVertex);
+  glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, solidEBO);
+
+  glBindVertexArray(0); // Unbind the VAO
+  glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
+
   delete [] upPositions;
   delete [] downPositions;
   delete [] leftPositions;
   delete [] rightPositions;
+  delete [] wireIndex;
   delete [] pointPositions;
   delete [] pointColors;
+  delete [] overlayColors;
   delete [] solidIndex;
 
   glEnable(GL_DEPTH_TEST);
