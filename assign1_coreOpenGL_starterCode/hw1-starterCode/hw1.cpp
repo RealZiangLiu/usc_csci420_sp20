@@ -105,7 +105,7 @@ void displayFunc()
 
   matrix.SetMatrixMode(OpenGLMatrix::ModelView);
   matrix.LoadIdentity();
-  matrix.LookAt(0, 0, 5, 0, 0, 0, 0, 1, 0);
+  matrix.LookAt(0, 3, 5, 0, 0, 0, 0, 1, 0);
 
   float m[16];
   // matrix.SetMatrixMode(OpenGLMatrix::ModelView);
@@ -466,8 +466,8 @@ void initScene(int argc, char *argv[])
     for (int y=0; y<imageHeight; ++y) {
       double curr_color = (int)heightmapImage->getPixel(x, y, 0) / 255.0;
       double binary_color = (curr_color >= 0.5 ? 1.0 : 0.0);
-      pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 2, (double)(y - imageHeight/2.0) / imageHeight * 2, curr_color);
-      binaryPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 2, (double)(y - imageHeight/2.0) / imageHeight * 2, binary_color);
+      pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, curr_color, (double)(y - imageHeight/2.0) / imageHeight * 4);
+      binaryPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, binary_color, (double)(y - imageHeight/2.0) / imageHeight * 4);
       pointColors[y * imageWidth + x] = glm::vec4(curr_color, curr_color, curr_color, 1);
       overlayColors[y * imageWidth + x] = glm::vec4(0.2 * curr_color, 0.3 * curr_color, 0.9 * curr_color, 1.0);
     }
