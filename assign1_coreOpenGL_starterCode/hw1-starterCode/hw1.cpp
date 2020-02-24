@@ -187,7 +187,7 @@ void idleFunc()
   if (record_animation == 1) {
     // Save screenshots for animation
     if (frame_cnt % 4 == 0) {
-      string file_path = "screenshots/";
+      string file_path = "../screenshots/";
       string id;
       int t = frame_cnt / 4;
       for (int i=0; i<3; ++i) {
