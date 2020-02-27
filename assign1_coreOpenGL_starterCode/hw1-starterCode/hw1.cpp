@@ -365,7 +365,7 @@ void keyboardFunc(unsigned char key, int x, int y)
       mode = 6;
     break;
     
-    case 'z': // Translate
+    case 't': // Translate
       controlState = TRANSLATE;
     break;
 
@@ -451,6 +451,13 @@ void initScene(int argc, char *argv[])
   int ret = pipelineProgram->Init(shaderBasePath);
   if (ret != 0) abort();
 
+  // Check for colored image
+  vector<int> channels = {0, 0, 0};
+  if (heightmapImage->getBytesPerPixel() == 3) {
+    channels[1] = 1;
+    channels[2] = 2;
+  }
+
   /*
     ============================================= Start Mode 1 =========================================
   */
@@ -464,12 +471,16 @@ void initScene(int argc, char *argv[])
   glm::vec4* overlayColors = new glm::vec4[pointNumVertex];
   for (int x=0; x<imageWidth; ++x) {
     for (int y=0; y<imageHeight; ++y) {
-      double curr_color = (int)heightmapImage->getPixel(x, y, 0) / 255.0;
-      double binary_color = (curr_color >= 0.5 ? 1.0 : 0.0);
-      pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, curr_color, (double)(y - imageHeight/2.0) / imageHeight * 4);
+      double color_R = heightmapImage->getPixel(x, y, channels[0]) / 255.0;
+      double color_G = heightmapImage->getPixel(x, y, channels[1]) / 255.0;
+      double color_B = heightmapImage->getPixel(x, y, channels[2]) / 255.0;
+
+      double color_height = (color_R + color_G + color_B) / 3.0;
+      double binary_color = (color_height >= 0.5 ? 1.0 : 0.0);
+      pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, color_height, (double)(y - imageHeight/2.0) / imageHeight * 4);
       binaryPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, binary_color, (double)(y - imageHeight/2.0) / imageHeight * 4);
-      pointColors[y * imageWidth + x] = glm::vec4(curr_color, curr_color, curr_color, 1);
-      overlayColors[y * imageWidth + x] = glm::vec4(0.2 * curr_color, 0.3 * curr_color, 0.9 * curr_color, 1.0);
+      pointColors[y * imageWidth + x] = glm::vec4(color_R, color_G, color_B, 1);
+      overlayColors[y * imageWidth + x] = glm::vec4(0.2 * color_height, 0.3 * color_height, 0.9 * color_height, 1.0);
     }
   }
   // Set positions VBO
