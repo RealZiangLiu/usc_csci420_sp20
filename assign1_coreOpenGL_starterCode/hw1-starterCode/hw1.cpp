@@ -56,6 +56,7 @@ ImageIO * heightmapImage; // Grayscale image range: (0, 255)
 ImageIO * colormapImage; // Image used for color mapping
 
 int mode = 1;
+bool color_map_mode = false;
 
 int record_animation = 0;
 
@@ -85,20 +86,21 @@ void renderOverlay();
 void renderBinary();
 
 // write a screenshot to the specified filename
-// void saveScreenshot(const char * filename)
-// {
-//   unsigned char * screenshotData = new unsigned char[windowWidth * windowHeight * 3];
-//   glReadPixels(0, 0, windowWidth, windowHeight, GL_RGB, GL_UNSIGNED_BYTE, screenshotData);
+void saveScreenshot(const char * filename)
+{
+  unsigned char * screenshotData = new unsigned char[windowWidth * windowHeight * 3];
+  glReadPixels(0, 0, windowWidth, windowHeight, GL_RGB, GL_UNSIGNED_BYTE, screenshotData);
 
-//   ImageIO screenshotImg(windowWidth, windowHeight, 3, screenshotData);
+  ImageIO screenshotImg(windowWidth, windowHeight, 3, screenshotData);
 
-//   if (screenshotImg.save(filename, ImageIO::FORMAT_JPEG) == ImageIO::OK)
-//     std::cout << "File " << filename << " saved successfully." << endl;
-//   else std::cout << "Failed to save file " << filename << '.' << endl;
+  if (screenshotImg.save(filename, ImageIO::FORMAT_JPEG) == ImageIO::OK)
+    std::cout << "File " << filename << " saved successfully." << endl;
+  else std::cout << "Failed to save file " << filename << '.' << endl;
 
-//   delete [] screenshotData;
-// }
+  delete [] screenshotData;
+}
 // write a screenshot to the specified filename
+/*
 void saveScreenshot(const char * filename)
 {
   int scale = 2;
@@ -126,7 +128,7 @@ void saveScreenshot(const char * filename)
 
   delete [] screenshotData;
   delete [] screenshotData1;
-}
+}*/
 
 void displayFunc()
 {
@@ -135,7 +137,7 @@ void displayFunc()
 
   matrix.SetMatrixMode(OpenGLMatrix::ModelView);
   matrix.LoadIdentity();
-  matrix.LookAt(0, 3, 5, 0, 0, 0, 0, 1, 0);
+  matrix.LookAt(0, 0, 5, 0, 0, 0, 0, 1, 0);
 
   float m[16];
   // matrix.SetMatrixMode(OpenGLMatrix::ModelView);
@@ -163,7 +165,11 @@ void displayFunc()
   pipelineProgram->Bind();
   // Update mode variable accordingly
   if (mode == 4) {
-    glUniform1i(h_mode, 1);
+    if (color_map_mode) { // color mapping mode
+      glUniform1i(h_mode, 3);
+    } else {
+      glUniform1i(h_mode, 1);
+    }
   } else if (mode == 6) { // binary
     glUniform1i(h_mode, 2);
   } else {
@@ -216,7 +222,7 @@ void idleFunc()
 {
   if (record_animation == 1) {
     // Save screenshots for animation
-    if (frame_cnt % 4 == 0) {
+    if (frame_cnt % 4 == 0 && frame_cnt < 1200) {
       string file_path = "../screenshots/";
       string id;
       int t = frame_cnt / 4;
@@ -467,12 +473,13 @@ void initScene(int argc, char *argv[])
       std::cout << "Error reading color image " << argv[2] << "." << endl;
       exit(EXIT_FAILURE);
     }
+    color_map_mode = true;
   }
 
   imageWidth = heightmapImage->getWidth();
   imageHeight = heightmapImage->getHeight();
 
-  if (argc == 3) {
+  if (color_map_mode) {
     if (colormapImage->getWidth() != imageWidth || colormapImage->getHeight() != imageHeight ) {
       std::cout << "Height image and color image size doesn't match." << endl;
       exit(EXIT_FAILURE);
@@ -518,12 +525,12 @@ void initScene(int argc, char *argv[])
       double color_R = heightmapImage->getPixel(x, y, channels[0]) / 255.0;
       double color_G = heightmapImage->getPixel(x, y, channels[1]) / 255.0;
       double color_B = heightmapImage->getPixel(x, y, channels[2]) / 255.0;
-      double color_height = (color_R + color_G + color_B) / 3.0;
-      if (argc == 3) {  // Color mapping mode
+      double color_height = (color_R / 3.0 + color_G / 3.0 + color_B / 3.0);
+      if (color_map_mode) {  // Color mapping mode
         // Flip along x direction
         color_R = colormapImage->getPixel(imageWidth - 1 - x, y, 0) / 255.0;
         color_G = colormapImage->getPixel(imageWidth - 1 - x, y, 1) / 255.0;
-        color_B = colormapImage->getPixel(imageWidth - 1 -x, y, 2) / 255.0;
+        color_B = colormapImage->getPixel(imageWidth - 1 - x, y, 2) / 255.0;
       }
       double binary_color = (color_height >= 0.5 ? 1.0 : 0.0);
       pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, color_height, (double)(y - imageHeight/2.0) / imageHeight * 4);
