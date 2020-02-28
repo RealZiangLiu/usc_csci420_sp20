@@ -53,6 +53,7 @@ int windowHeight = 720;
 char windowTitle[512] = "CSCI 420 homework I";
 
 ImageIO * heightmapImage; // Grayscale image range: (0, 255)
+ImageIO * colormapImage; // Image used for color mapping
 
 int mode = 1;
 
@@ -84,18 +85,47 @@ void renderOverlay();
 void renderBinary();
 
 // write a screenshot to the specified filename
+// void saveScreenshot(const char * filename)
+// {
+//   unsigned char * screenshotData = new unsigned char[windowWidth * windowHeight * 3];
+//   glReadPixels(0, 0, windowWidth, windowHeight, GL_RGB, GL_UNSIGNED_BYTE, screenshotData);
+
+//   ImageIO screenshotImg(windowWidth, windowHeight, 3, screenshotData);
+
+//   if (screenshotImg.save(filename, ImageIO::FORMAT_JPEG) == ImageIO::OK)
+//     std::cout << "File " << filename << " saved successfully." << endl;
+//   else std::cout << "Failed to save file " << filename << '.' << endl;
+
+//   delete [] screenshotData;
+// }
+// write a screenshot to the specified filename
 void saveScreenshot(const char * filename)
 {
-  unsigned char * screenshotData = new unsigned char[windowWidth * windowHeight * 3];
-  glReadPixels(0, 0, windowWidth, windowHeight, GL_RGB, GL_UNSIGNED_BYTE, screenshotData);
+  int scale = 2;
+  int ww = windowWidth * scale;
+  int hh = windowHeight * scale;
+  unsigned char * screenshotData = new unsigned char[ww * hh * 3];
+  glReadPixels(0, 0, ww, hh, GL_RGB, GL_UNSIGNED_BYTE, screenshotData);
 
-  ImageIO screenshotImg(windowWidth, windowHeight, 3, screenshotData);
+  unsigned char * screenshotData1 = new unsigned char[windowWidth * windowHeight * 3];
+  for (int h = 0; h < windowHeight; h++) {
+    for (int w = 0; w < windowWidth; w++) {
+      int h1 = h * scale;
+      int w1 = w * scale;
+      screenshotData1[(h * windowWidth + w) * 3] = screenshotData[(h1 * ww + w1) * 3];
+      screenshotData1[(h * windowWidth + w) * 3 + 1] = screenshotData[(h1 * ww + w1) * 3 + 1];
+      screenshotData1[(h * windowWidth + w) * 3 + 2] = screenshotData[(h1 * ww + w1) * 3 + 2];
+    }
+  }
+
+  ImageIO screenshotImg(windowWidth, windowHeight, 3, screenshotData1);
 
   if (screenshotImg.save(filename, ImageIO::FORMAT_JPEG) == ImageIO::OK)
     cout << "File " << filename << " saved successfully." << endl;
   else cout << "Failed to save file " << filename << '.' << endl;
 
   delete [] screenshotData;
+  delete [] screenshotData1;
 }
 
 void displayFunc()
@@ -332,36 +362,30 @@ void keyboardFunc(unsigned char key, int x, int y)
     break;
 
     case ' ':
-      cout << "You pressed the spacebar." << endl;
+      std::cout << "You pressed the spacebar." << endl;
     break;
 
     case '1': // Points mode
-      cout << "Pressed key 1." << endl;
       mode = 1;
     break;
 
     case '2': // Lines mode
-      cout << "Pressed key 2." << endl;
       mode = 2;
     break;
 
     case '3': // Solid triangles mode
-      cout << "Pressed key 3." << endl;
       mode = 3;
     break;
 
     case '4': // Smooth mode
-      cout << "Pressed key 4." << endl;
       mode = 4;
     break;
 
     case '5': // wireframe overlay mode
-      cout << "Pressed key 5." << endl;
       mode = 5;
     break;
 
     case '6': // binary mode
-      cout << "Pressed key 6." << endl;
       mode = 6;
     break;
     
@@ -408,7 +432,7 @@ void renderSmooth() {
 
 void renderOverlay() {
   glEnable(GL_POLYGON_OFFSET_FILL);
-  glPolygonOffset(0.0f, 1.0f);
+  glPolygonOffset(1.0f, 1.0f);
   glBindVertexArray(solidVAO);
   glDrawElements(GL_TRIANGLE_STRIP, solidIdxCnt, GL_UNSIGNED_INT, (void*)0);
   glDisable(GL_POLYGON_OFFSET_FILL);
@@ -431,12 +455,32 @@ void initScene(int argc, char *argv[])
   heightmapImage = new ImageIO();
   if (heightmapImage->loadJPEG(argv[1]) != ImageIO::OK)
   {
-    cout << "Error reading image " << argv[1] << "." << endl;
+    std::cout << "Error reading image " << argv[1] << "." << endl;
     exit(EXIT_FAILURE);
+  }
+
+  // If two inputs then do color mapping mode
+  if (argc == 3) {
+    colormapImage = new ImageIO();
+    if (colormapImage->loadJPEG(argv[2]) != ImageIO::OK)
+    {
+      std::cout << "Error reading color image " << argv[2] << "." << endl;
+      exit(EXIT_FAILURE);
+    }
   }
 
   imageWidth = heightmapImage->getWidth();
   imageHeight = heightmapImage->getHeight();
+
+  if (argc == 3) {
+    if (colormapImage->getWidth() != imageWidth || colormapImage->getHeight() != imageHeight ) {
+      std::cout << "Height image and color image size doesn't match." << endl;
+      exit(EXIT_FAILURE);
+    } else if (colormapImage->getBytesPerPixel() != 3) {
+      std::cout << "Color image must be RGB format." << endl;
+      exit(EXIT_FAILURE);
+    }
+  }
 
   // Set numVertices
   pointNumVertex = imageWidth * imageHeight;
@@ -474,8 +518,13 @@ void initScene(int argc, char *argv[])
       double color_R = heightmapImage->getPixel(x, y, channels[0]) / 255.0;
       double color_G = heightmapImage->getPixel(x, y, channels[1]) / 255.0;
       double color_B = heightmapImage->getPixel(x, y, channels[2]) / 255.0;
-
       double color_height = (color_R + color_G + color_B) / 3.0;
+      if (argc == 3) {  // Color mapping mode
+        // Flip along x direction
+        color_R = colormapImage->getPixel(imageWidth - 1 - x, y, 0) / 255.0;
+        color_G = colormapImage->getPixel(imageWidth - 1 - x, y, 1) / 255.0;
+        color_B = colormapImage->getPixel(imageWidth - 1 -x, y, 2) / 255.0;
+      }
       double binary_color = (color_height >= 0.5 ? 1.0 : 0.0);
       pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, color_height, (double)(y - imageHeight/2.0) / imageHeight * 4);
       binaryPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, binary_color, (double)(y - imageHeight/2.0) / imageHeight * 4);
@@ -812,17 +861,19 @@ void initScene(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-  if (argc != 2)
+  if (argc != 2 && argc != 3)
   {
-    cout << "The arguments are incorrect." << endl;
-    cout << "usage: ./hw1 <heightmap file>" << endl;
+    std::cout << "The arguments are incorrect." << endl;
+    std::cout << "usage: ./hw1 <heightmap file>" << endl;
+    std::cout << "Optional: use third argument to activate color mapping mode." << endl;
+    std::cout << "usage: ./hw1 <heightmap file> <colormap file>" << endl;
     exit(EXIT_FAILURE);
   }
 
-  cout << "Initializing GLUT..." << endl;
+  std::cout << "Initializing GLUT..." << endl;
   glutInit(&argc,argv);
 
-  cout << "Initializing OpenGL..." << endl;
+  std::cout << "Initializing OpenGL..." << endl;
 
   #ifdef __APPLE__
     glutInitDisplayMode(GLUT_3_2_CORE_PROFILE | GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_STENCIL);
@@ -834,9 +885,9 @@ int main(int argc, char *argv[])
   glutInitWindowPosition(0, 0);  
   glutCreateWindow(windowTitle);
 
-  cout << "OpenGL Version: " << glGetString(GL_VERSION) << endl;
-  cout << "OpenGL Renderer: " << glGetString(GL_RENDERER) << endl;
-  cout << "Shading Language Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << endl;
+  std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << endl;
+  std::cout << "OpenGL Renderer: " << glGetString(GL_RENDERER) << endl;
+  std::cout << "Shading Language Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << endl;
 
   #ifdef __APPLE__
     // This is needed on recent Mac OS X versions to correctly display the window.
@@ -866,7 +917,7 @@ int main(int argc, char *argv[])
     GLint result = glewInit();
     if (result != GLEW_OK)
     {
-      cout << "error: " << glewGetErrorString(result) << endl;
+      std::cout << "error: " << glewGetErrorString(result) << endl;
       exit(EXIT_FAILURE);
     }
   #endif
