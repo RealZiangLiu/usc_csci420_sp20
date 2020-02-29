@@ -22,6 +22,7 @@
 * Color Mode: Use RGB format input automatically displays in color mode.
 * Color Mapping Mode: Pass three parameters to command line to activate color mapping mode. Usage: ./hw1 PATH_TO_HEIGHT_IMAGE PATH_TO_COLOR_IMAGE
 Note that the dimensions must match.
+* Some RGB images for testing are in the img folder under "hw1-starterCode".
 
 ## Extra Credits
 * Used Element Arrays and glDrawElements to speed up (works smoothly with the largest file provided).
