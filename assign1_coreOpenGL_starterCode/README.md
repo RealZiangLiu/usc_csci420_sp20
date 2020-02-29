@@ -17,10 +17,11 @@
 * Mode 2: Wireframe.
 * Mode 3: Solid.
 * Mode 4: Smooth.
-* Mode 5: Solid with wirefr ame overlay.
+* Mode 5: Solid with wireframe overlay.
 * Mode 6: Interesting binary mapping.
 * Color Mode: Use RGB format input automatically displays in color mode.
-* Color Mapping Mode: Pass three parameters to command line to activate color mapping mode. Usage: ./hw1 PATH_TO_HEIGHT_IMAGE PATH_TO_COLOR_IMAGE
+* Color Mapping Mode: Pass three parameters to command line to activate color mapping mode. 
+Usage: ./hw1 PATH_TO_HEIGHT_IMAGE PATH_TO_COLOR_IMAGE
 Note that the dimensions must match.
 * Some RGB images for testing are in the img folder under "hw1-starterCode".
 
