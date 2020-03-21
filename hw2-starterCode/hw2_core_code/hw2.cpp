@@ -65,6 +65,17 @@ struct Point
   Point operator* (double mult) {
     return Point(x * mult, y * mult, z * mult);
   }
+
+  Point operator/ (double div) {
+    return Point(x / div, y / div, z / div);
+  }
+
+  Point cross (Point& other) {
+    Point res(y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x);
+    double norm = sqrt(res.x * res.x + res.y * res.y + res.z * res.z);
+    cout << norm << endl;
+    return res / norm;
+  }
 };
 
 // spline struct 
@@ -102,6 +113,31 @@ struct CatmullMatrix
     }
     return Point(final_res[0], final_res[1], final_res[2]);
   }
+
+  Point computeTangent (double u_, Point& p_1, Point& p_2, Point& p_3, Point& p_4) {
+    vector<double> first_res(4, 0.0);
+    vector<double> final_res(3, 0.0);
+    vector<double> design = {3 * pow(u_, 2), 2 * u_, 1.0, 0.0};
+    vector<Point> control = {p_1, p_2, p_3, p_4};
+    // Multiply design matrix with basis
+    for (int i=0; i<4; ++i) {
+      for (int j=0; j<4; ++j) {
+        first_res[i] += (design[j] * basis[j][i]);
+      }
+    }
+
+    // Multiply previous result with control matrix
+    for (int i=0; i<4; ++i) {
+      final_res[0] += (first_res[i] * control[i].x);
+      final_res[1] += (first_res[i] * control[i].y);
+      final_res[2] += (first_res[i] * control[i].z);
+    }
+    double norm = sqrt(final_res[0]*final_res[0] + final_res[1]*final_res[1] + final_res[2]*final_res[2]);
+    final_res[0] /= norm;
+    final_res[1] /= norm;
+    final_res[2] /= norm;
+    return Point(final_res[0], final_res[1], final_res[2]);
+  }
 };
 
 CatmullMatrix computeMatrix;
@@ -130,8 +166,10 @@ int windowHeight = 720;
 char windowTitle[512] = "CSCI 420 homework II";
 
 int mode = 1;
-
 int record_animation = 0;
+int camera_on_rail = 0;
+
+int roller_frame_count = 0;
 
 
 GLuint VBO;
@@ -141,6 +179,12 @@ GLuint EBO;
 vector<GLuint> splineVBOs;
 vector<GLuint> splineVAOs;
 vector<int> splineVertexCnt;
+
+// store point positions along spline
+vector< vector<Point> > splinePointCoords;
+vector< vector<Point> > splineTangents;
+vector< vector<Point> > splineNormals;
+vector< vector<Point> > splineBinormals;
 
 OpenGLMatrix matrix;
 BasicPipelineProgram * pipelineProgram;
@@ -332,22 +376,53 @@ void displayFunc()
   // render some stuff...
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  matrix.SetMatrixMode(OpenGLMatrix::ModelView);
-  matrix.LoadIdentity();
-  matrix.LookAt(0, 0, 5, 0, 0, 0, 0, 1, 0);
+  // Reset roller coaster frame counter
+  roller_frame_count %= splineVertexCnt[0];
 
-  float m[16];
-  // matrix.SetMatrixMode(OpenGLMatrix::ModelView);
-  matrix.Translate(landTranslate[0], landTranslate[1], landTranslate[2]);
-  matrix.Rotate(landRotate[0], 1, 0, 0);
-  matrix.Rotate(landRotate[1], 0, 1, 0);
-  matrix.Rotate(landRotate[2], 0, 0, 1);
-  matrix.Scale(landScale[0], landScale[1], landScale[2]);
-  matrix.GetMatrix(m);
+  float m[16], p[16]; // Column-major
+  if (!camera_on_rail) {
+    matrix.SetMatrixMode(OpenGLMatrix::ModelView);
+    matrix.LoadIdentity();
+    matrix.LookAt(0, 0, 5, 0, 0, 0, 0, 1, 0);
 
-  float p[16];  // Column-major
-  matrix.SetMatrixMode(OpenGLMatrix::Projection);
-  matrix.GetMatrix(p);
+    // matrix.SetMatrixMode(OpenGLMatrix::ModelView);
+    matrix.Translate(landTranslate[0], landTranslate[1], landTranslate[2]);
+    matrix.Rotate(landRotate[0], 1, 0, 0);
+    matrix.Rotate(landRotate[1], 0, 1, 0);
+    matrix.Rotate(landRotate[2], 0, 0, 1);
+    matrix.Scale(landScale[0], landScale[1], landScale[2]);
+    matrix.GetMatrix(m);
+
+    matrix.SetMatrixMode(OpenGLMatrix::Projection);
+    matrix.GetMatrix(p);
+  } else {
+    matrix.SetMatrixMode(OpenGLMatrix::ModelView);
+    matrix.LoadIdentity();
+    int focusIdx = (roller_frame_count+1) % splineVertexCnt[0];
+    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.01 * splineNormals[0][roller_frame_count].x, 
+                  splinePointCoords[0][roller_frame_count].y + 0.01 * splineNormals[0][roller_frame_count].y,
+                  splinePointCoords[0][roller_frame_count].z + 0.01 * splineNormals[0][roller_frame_count].z, // eye point
+                  splinePointCoords[0][focusIdx].x + 0.01 * splineNormals[0][focusIdx].x, 
+                  splinePointCoords[0][focusIdx].y + 0.01 * splineNormals[0][focusIdx].y,
+                  splinePointCoords[0][focusIdx].z + 0.01 * splineNormals[0][focusIdx].z,          // focus point          
+                  splineNormals[0][roller_frame_count].x,
+                  splineNormals[0][roller_frame_count].y,
+                  splineNormals[0][roller_frame_count].z);
+    matrix.Translate(landTranslate[0], landTranslate[1], landTranslate[2]);
+    matrix.Rotate(landRotate[0], 1, 0, 0);
+    matrix.Rotate(landRotate[1], 0, 1, 0);
+    matrix.Rotate(landRotate[2], 0, 0, 1);
+    matrix.Scale(landScale[0], landScale[1], landScale[2]);
+    matrix.GetMatrix(m);
+
+    matrix.SetMatrixMode(OpenGLMatrix::Projection);
+    matrix.GetMatrix(p);
+  }
+  // ++roller_frame_count;
+  roller_frame_count += 10;
+
+  // DEBUG print
+  cout << "Coord: " << splineTangents[0][roller_frame_count].x << " " << splineTangents[0][roller_frame_count].y << " " << splineTangents[0][roller_frame_count].z << endl;
 
   // get a handle to the program
   GLuint program = pipelineProgram->GetProgramHandle();
@@ -542,6 +617,16 @@ void keyboardFunc(unsigned char key, int x, int y)
       // Start capture animation
       record_animation = (1 - record_animation);
     break;
+
+    case 'r':
+      // Run the roller coaster
+      camera_on_rail = 1 - camera_on_rail;
+      if (camera_on_rail) {
+        cout << "Placing camera on rail. Press 'r' again to change." << endl;
+      } else {
+        cout << "Camera free move mode. Press 'r' again to change." << endl;
+      }
+    break;
   }
 }
 
@@ -566,44 +651,72 @@ void renderSplines () {
   }
 }
 
-void compute_catmull_rom_point (glm::vec3* pointPositions, Point* points, int currNumCtrlPts, Point& prev_1, Point& prev_2, Point& next_1, bool connect_prev = false, bool connect_next = false) {
+void compute_store_points_tangents (glm::vec3* pointPositions, int splineIdx, int pointCnt, int u_cnt, Point& p_1, Point& p_2, Point& p_3, Point& p_4) {
+  Point res = computeMatrix.computePosition(u_cnt * param_u_step, p_1, p_2, p_3, p_4);
+  // Position vector to put into VBO
+  pointPositions[pointCnt] = glm::vec3(res.x, res.y, res.z);
+
+  // Global position vector to track point locations
+  splinePointCoords[splineIdx].push_back(res);
+
+  Point tangent = computeMatrix.computeTangent(u_cnt * param_u_step, p_1, p_2, p_3, p_4);
+  // Global tangent vector to track tangent of spline at this point
+  splineTangents[splineIdx].push_back(tangent);
+}
+
+void compute_catmull_rom_point (glm::vec3* pointPositions, Point* points, int currNumCtrlPts, int splineIdx, Point& prev_1, Point& prev_2, Point& next_1, bool connect_prev = false, bool connect_next = false) {
   int pointCnt = 0;
+
   if (connect_prev) {
+    // First segment to connect with previous spline
     for (int u_cnt=0; u_cnt < (int)(1.0 / param_u_step); ++u_cnt) {
-      Point res = computeMatrix.computePosition(u_cnt * param_u_step, prev_2, prev_1, points[1], points[2]);
-      pointPositions[pointCnt] = glm::vec3(res.x, res.y, res.z);
+      compute_store_points_tangents(pointPositions, splineIdx, pointCnt, u_cnt, prev_2, prev_1, points[1], points[2]);
+
       ++pointCnt;
     }
+    // Second segment to connect with previous spline
     for (int u_cnt=0; u_cnt < (int)(1.0 / param_u_step); ++u_cnt) {
-      Point res = computeMatrix.computePosition(u_cnt * param_u_step, prev_1, points[1], points[2], points[3]);
-      pointPositions[pointCnt] = glm::vec3(res.x, res.y, res.z);
+      compute_store_points_tangents(pointPositions, splineIdx, pointCnt, u_cnt, prev_1, points[1], points[2], points[3]);
+
       ++pointCnt;
     }
   }
+
   int start = connect_prev ? 2 : 1;
   int end = connect_next ? (currNumCtrlPts-3) : (currNumCtrlPts-2);
   for (int i=start; i<end; ++i) {
     for (int u_cnt=0; u_cnt < (int)(1.0 / param_u_step); ++u_cnt) {
-      Point res = computeMatrix.computePosition(u_cnt * param_u_step, points[i-1], points[i], points[i+1], points[i+2]);
-      pointPositions[pointCnt] = glm::vec3(res.x, res.y, res.z);
+      compute_store_points_tangents(pointPositions, splineIdx, pointCnt, u_cnt, points[i-1], points[i], points[i+1], points[i+2]);
+
       ++pointCnt;
     }
   }
+
   // last point
-  Point last;
+  // Point last;
   if (connect_next) {
     cout << "[DEBUG]: connect next is true" << endl;
     for (int u_cnt=0; u_cnt <= (int)(1.0 / param_u_step); ++u_cnt) {
-      Point res = computeMatrix.computePosition(u_cnt * param_u_step, points[currNumCtrlPts-4], points[currNumCtrlPts-3], points[currNumCtrlPts-2], next_1);
-      pointPositions[pointCnt] = glm::vec3(res.x, res.y, res.z);
+      compute_store_points_tangents(pointPositions, splineIdx, pointCnt, u_cnt, points[currNumCtrlPts-4], points[currNumCtrlPts-3], points[currNumCtrlPts-2], next_1);
+
       ++pointCnt;
     }
   } else {
-    last = computeMatrix.computePosition(1.0, points[currNumCtrlPts-4], points[currNumCtrlPts-3], 
-                                              points[currNumCtrlPts-2], points[currNumCtrlPts-1]);
-    pointPositions[pointCnt] = glm::vec3(last.x, last.y, last.z);
+    compute_store_points_tangents(pointPositions, splineIdx, pointCnt, (int)(1.0 / param_u_step), points[currNumCtrlPts-4], points[currNumCtrlPts-3], points[currNumCtrlPts-2], points[currNumCtrlPts-1]);
+    ++pointCnt;
   }
-  
+
+  // Compute initial Frenet Frame vectors
+  Point initial_V(0.0, 0.0, 1.0);
+  Point T_0 = splineTangents[splineIdx][0];
+  Point N_0 = T_0.cross(initial_V);
+  Point B_0 = T_0.cross(N_0);
+  splineNormals[splineIdx].push_back(N_0);
+  splineBinormals[splineIdx].push_back(B_0);
+  for (int i=1; i<pointCnt; ++i) {
+    splineNormals[splineIdx].push_back(splineBinormals[splineIdx][i-1].cross(splineTangents[splineIdx][i]));
+    splineBinormals[splineIdx].push_back(splineTangents[splineIdx][i].cross(splineNormals[splineIdx][i]));
+  }
 }
 
 void initScene(int argc, char *argv[])
@@ -627,10 +740,17 @@ void initScene(int argc, char *argv[])
   Point prev_2_point;
   Point next_1_point;
 
+  // Intialize global coord and tangent vectors
+  splinePointCoords.resize(numSplines);
+  splineTangents.resize(numSplines);
+  splineNormals.resize(numSplines);
+  splineBinormals.resize(numSplines);
+
   for (int i=0; i<numSplines; ++i) {
-    cout << "[DEBUG] Control points: " << splines[i].numControlPoints << endl;
+    // cout << "[DEBUG] Control points: " << splines[i].numControlPoints << endl;
 
     int currNumCtrlPts = splines[i].numControlPoints;
+    // currNumCtrlPts - 3 segments, +1 for endpoint
     int uNumPoints = ((int)(1.0 / param_u_step)) * (currNumCtrlPts - 3) + 1;
     
     if (i > 0) {
@@ -667,11 +787,10 @@ void initScene(int argc, char *argv[])
     }
 
     // Disable multiple curve connection
-    connect_prev = false;
-    connect_next = false;
+    // connect_prev = false;
+    // connect_next = false;
     
-    compute_catmull_rom_point(pointPositions, splines[i].points, currNumCtrlPts, prev_1_point, prev_2_point, next_1_point, connect_prev, connect_next);
-
+    compute_catmull_rom_point(pointPositions, splines[i].points, currNumCtrlPts, i, prev_1_point, prev_2_point, next_1_point, connect_prev, connect_next);
   
 
     // Set colors
