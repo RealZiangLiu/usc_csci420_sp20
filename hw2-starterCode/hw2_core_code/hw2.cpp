@@ -41,7 +41,8 @@ using namespace std;
 // Constant parameters
 const double param_s = 0.5;
 const double param_u_step = 0.001;
-const int speed = 5;
+const int param_speed = 15;
+const double param_rail_scale = 0.1;
 
 // represents one control point along the spline 
 struct Point 
@@ -55,11 +56,11 @@ struct Point
   Point (double x_, double y_, double z_)
       : x(x_), y(y_), z(z_) {}
 
-  Point operator- (Point& other) {
+  Point operator- (Point other) {
     return Point(x - other.x, y - other.y, z - other.z);
   }
 
-  Point operator+ (Point& other) {
+  Point operator+ (Point other) {
     return Point(x + other.x, y + other.y, z + other.z);
   }
 
@@ -80,12 +81,11 @@ struct Point
 
   Point cross (Point& other) {
     Point res(y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x);
-    double norm = sqrt(res.x * res.x + res.y * res.y + res.z * res.z);
-    return res / norm;
+    return res;
   }
 };
 
-Point normalize (Point& pt) {
+Point normalize (Point pt) {
   double norm = sqrt(pt.x * pt.x + pt.y * pt.y + pt.z * pt.z);
   return pt / norm;
 }
@@ -428,10 +428,10 @@ void displayFunc()
     matrix.GetMatrix(p);
   }
   // ++roller_frame_count;
-  roller_frame_count += speed;
+  roller_frame_count += param_speed;
 
   // DEBUG print
-  cout << "Coord: " << splineTangents[0][roller_frame_count].x << " " << splineTangents[0][roller_frame_count].y << " " << splineTangents[0][roller_frame_count].z << endl;
+  // cout << "Coord: " << splineTangents[0][roller_frame_count].x << " " << splineTangents[0][roller_frame_count].y << " " << splineTangents[0][roller_frame_count].z << endl;
 
   // get a handle to the program
   GLuint program = pipelineProgram->GetProgramHandle();
@@ -660,6 +660,31 @@ void renderSplines () {
   }
 }
 
+void add_square_rail_points (glm::vec3* pointPositions, glm::vec3* squarePositions, int splineIdx, int pointCnt) {
+  int squarePointCnt = 0;
+  for (int i=0; i<pointCnt; ++i) {
+    Point p_0 = splinePointCoords[splineIdx][i];
+    Point n_0 = splineNormals[splineIdx][i];
+    Point b_0 = splineBinormals[splineIdx][i];
+
+    Point v_0, v_1, v_2, v_3, v_4;
+    v_0 = p_0 + (b_0 - n_0) * param_rail_scale;
+    v_1 = p_0 + (n_0 + b_0) * param_rail_scale;
+    v_2 = p_0 + (n_0 - b_0) * param_rail_scale;
+    v_3 = p_0 + (Point(0,0,0) - n_0 - b_0) * param_rail_scale;
+
+    squarePositions[squarePointCnt] = glm::vec3(v_0.x, v_0.y, v_0.z);
+    squarePositions[squarePointCnt+1] = glm::vec3(v_1.x, v_1.y, v_1.z);
+    squarePositions[squarePointCnt+2] = glm::vec3(v_2.x, v_2.y, v_2.z);
+    squarePositions[squarePointCnt+3] = glm::vec3(v_3.x, v_3.y, v_3.z);
+    squarePointCnt += 4;
+  }
+}
+
+void compute_square_rail_idx (glm::vec3* squareIdx, glm::vec3* squarePositions, int splineIdx, int pointCnt) {
+  
+}
+
 void compute_store_points_tangents (glm::vec3* pointPositions, int splineIdx, int pointCnt, int u_cnt, Point& p_1, Point& p_2, Point& p_3, Point& p_4) {
   Point res = computeMatrix.computePosition(u_cnt * param_u_step, p_1, p_2, p_3, p_4);
   // Position vector to put into VBO
@@ -673,7 +698,7 @@ void compute_store_points_tangents (glm::vec3* pointPositions, int splineIdx, in
   splineTangents[splineIdx].push_back(tangent);
 }
 
-void compute_catmull_rom_point (glm::vec3* pointPositions, Point* points, int currNumCtrlPts, int splineIdx, Point& prev_1, Point& prev_2, Point& next_1, bool connect_prev = false, bool connect_next = false) {
+void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePositions, Point* points, int currNumCtrlPts, int splineIdx, Point& prev_1, Point& prev_2, Point& next_1, bool connect_prev, bool connect_next) {
   int pointCnt = 0;
 
   if (connect_prev) {
@@ -702,12 +727,9 @@ void compute_catmull_rom_point (glm::vec3* pointPositions, Point* points, int cu
   }
 
   // last point
-  // Point last;
   if (connect_next) {
-    cout << "[DEBUG]: connect next is true" << endl;
     for (int u_cnt=0; u_cnt <= (int)(1.0 / param_u_step); ++u_cnt) {
       compute_store_points_tangents(pointPositions, splineIdx, pointCnt, u_cnt, points[currNumCtrlPts-4], points[currNumCtrlPts-3], points[currNumCtrlPts-2], next_1);
-
       ++pointCnt;
     }
   } else {
@@ -715,17 +737,22 @@ void compute_catmull_rom_point (glm::vec3* pointPositions, Point* points, int cu
     ++pointCnt;
   }
 
+  cout << "IN func: " << pointCnt << endl;
+
   // Compute initial Frenet Frame vectors
   Point initial_V(0.0, 0.0, 1.0);
   Point T_0 = splineTangents[splineIdx][0];
-  Point N_0 = T_0.cross(initial_V);
-  Point B_0 = T_0.cross(N_0);
+  Point N_0 = normalize(T_0.cross(initial_V));
+  Point B_0 = normalize(T_0.cross(N_0));
   splineNormals[splineIdx].push_back(N_0);
   splineBinormals[splineIdx].push_back(B_0);
   for (int i=1; i<pointCnt; ++i) {
-    splineNormals[splineIdx].push_back(splineBinormals[splineIdx][i-1].cross(splineTangents[splineIdx][i]));
-    splineBinormals[splineIdx].push_back(splineTangents[splineIdx][i].cross(splineNormals[splineIdx][i]));
+    splineNormals[splineIdx].push_back(normalize(splineBinormals[splineIdx][i-1].cross(splineTangents[splineIdx][i])));
+    splineBinormals[splineIdx].push_back(normalize(splineTangents[splineIdx][i].cross(splineNormals[splineIdx][i])));
   }
+
+  // TODO: check this
+  add_square_rail_points(pointPositions, squarePositions, splineIdx, pointCnt);
 }
 
 void initScene(int argc, char *argv[])
@@ -761,27 +788,8 @@ void initScene(int argc, char *argv[])
     int currNumCtrlPts = splines[i].numControlPoints;
     // currNumCtrlPts - 3 segments, +1 for endpoint
     int uNumPoints = ((int)(1.0 / param_u_step)) * (currNumCtrlPts - 3) + 1;
-    
-    if (i > 0) {
-      // uNumPoints += (int)(1.0 / param_u_step);
-    }
-
-    // // Compute tangent for control points p_2 ~ p_(n-1)
-    // Point* tangentPoints = new Point[currNumCtrlPts - 2];
-
-    // for (int j=1; j<currNumCtrlPts-1; ++j) {
-    //   tangentPoints[j-1] = (splines[i].points[j+1] - splines[i].points[j-1]) * param_s;
-    // }
-
-    // // DEBUG output
-    // for (int i=0; i<currNumCtrlPts-2; ++i) {
-    //   cout << tangentPoints[i].x << ", " << tangentPoints[i].y << ", " << tangentPoints[i].z << endl;
-    // }
 
     GLuint currVBO, currVAO;
-
-    glm::vec3* pointPositions = new glm::vec3[uNumPoints];
-    glm::vec4* pointColors = new glm::vec4[uNumPoints];
 
     bool connect_prev = false;
     if (i > 0) {
@@ -794,14 +802,30 @@ void initScene(int argc, char *argv[])
       connect_next = true;
       next_1_point = splines[i+1].points[1];
     }
+    cout << connect_prev << " " << connect_next << endl;
+
+    if (connect_prev) {
+      uNumPoints += ((int)(1.0 / param_u_step));
+    }
+
+    int squareIdxCnt = 24 * (uNumPoints - 1);
+
+    cout << "uNum: " << uNumPoints << endl;
+    // TODO: only keep one of these two
+    glm::vec3* pointPositions = new glm::vec3[uNumPoints];
+    glm::vec3* squarePositions = new glm::vec3[uNumPoints*4];
+    unsigned int* squareIndex = new unsigned int[squareIdxCnt];
+
+    // TODO: move color computation to vertex shader
+    glm::vec4* pointColors = new glm::vec4[uNumPoints];
 
     // Disable multiple curve connection
     // connect_prev = false;
     // connect_next = false;
     
-    compute_catmull_rom_point(pointPositions, splines[i].points, currNumCtrlPts, i, prev_1_point, prev_2_point, next_1_point, connect_prev, connect_next);
+    compute_catmull_rom_point(pointPositions, squarePositions, splines[i].points, currNumCtrlPts, i, prev_1_point, prev_2_point, next_1_point, connect_prev, connect_next);
   
-
+    cout << "GOTHERE " << endl;
     // Set colors
     for (int i=0; i<uNumPoints; ++i) {
       pointColors[i] = glm::vec4(1.0, 1.0, 1.0, 1.0);
@@ -811,6 +835,8 @@ void initScene(int argc, char *argv[])
     // for (int i=0; i<uNumPoints; ++i) {
     //   cout << pointPositions[i][0] << ", " << pointPositions[i][1] << ", " << pointPositions[i][2] << endl;
     // }
+
+    // TODO: add function to compute eight points for cross-section for every two points on rail
 
     // Set positions VBO
     glGenBuffers(1, &currVBO);
