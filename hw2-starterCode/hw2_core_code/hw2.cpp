@@ -41,8 +41,8 @@ using namespace std;
 // Constant parameters
 const double param_s = 0.5;
 const double param_u_step = 0.001;
-const int param_speed = 15;
-const double param_rail_scale = 0.1;
+const int param_speed = 5;
+const double param_rail_scale = 0.01;
 
 // represents one control point along the spline 
 struct Point 
@@ -151,6 +151,8 @@ struct CatmullMatrix
 
 CatmullMatrix computeMatrix;
 
+Point initial_V(0.0, 1.0, 0.0);
+
 // the spline array 
 Spline * splines;
 // total number of splines 
@@ -188,6 +190,7 @@ GLuint EBO;
 vector<GLuint> splineVBOs;
 vector<GLuint> splineVAOs;
 vector<int> splineVertexCnt;
+vector<int> splineSquareEBOCnt;
 
 // store point positions along spline
 vector< vector<Point> > splinePointCoords;
@@ -408,12 +411,12 @@ void displayFunc()
     matrix.SetMatrixMode(OpenGLMatrix::ModelView);
     matrix.LoadIdentity();
     int focusIdx = (roller_frame_count+1) % splineVertexCnt[0];
-    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.01 * splineNormals[0][roller_frame_count].x, 
-                  splinePointCoords[0][roller_frame_count].y + 0.01 * splineNormals[0][roller_frame_count].y,
-                  splinePointCoords[0][roller_frame_count].z + 0.01 * splineNormals[0][roller_frame_count].z, // eye point
-                  splinePointCoords[0][focusIdx].x + 0.01 * splineNormals[0][focusIdx].x, 
-                  splinePointCoords[0][focusIdx].y + 0.01 * splineNormals[0][focusIdx].y,
-                  splinePointCoords[0][focusIdx].z + 0.01 * splineNormals[0][focusIdx].z,          // focus point          
+    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.04 * splineNormals[0][roller_frame_count].x, 
+                  splinePointCoords[0][roller_frame_count].y + 0.04 * splineNormals[0][roller_frame_count].y,
+                  splinePointCoords[0][roller_frame_count].z + 0.04 * splineNormals[0][roller_frame_count].z, // eye point
+                  splinePointCoords[0][focusIdx].x + 0.04 * splineNormals[0][focusIdx].x, 
+                  splinePointCoords[0][focusIdx].y + 0.04 * splineNormals[0][focusIdx].y,
+                  splinePointCoords[0][focusIdx].z + 0.04 * splineNormals[0][focusIdx].z,          // focus point          
                   splineNormals[0][roller_frame_count].x,
                   splineNormals[0][roller_frame_count].y,
                   splineNormals[0][roller_frame_count].z);
@@ -431,7 +434,7 @@ void displayFunc()
   roller_frame_count += param_speed;
 
   // DEBUG print
-  // cout << "Coord: " << splineTangents[0][roller_frame_count].x << " " << splineTangents[0][roller_frame_count].y << " " << splineTangents[0][roller_frame_count].z << endl;
+  // cout << "Coord: " << splinePointCoords[0][roller_frame_count].x << " " << splinePointCoords[0][roller_frame_count].y << " " << splinePointCoords[0][roller_frame_count].z << endl;
 
   // get a handle to the program
   GLuint program = pipelineProgram->GetProgramHandle();
@@ -655,12 +658,14 @@ void keyboardFunc(unsigned char key, int x, int y)
 void renderSplines () {
   for (size_t i=0; i<numSplines; ++i) {
     glBindVertexArray(splineVAOs[i]);
-    glDrawArrays(GL_LINE_STRIP, 0, splineVertexCnt[i]);
+    // glDrawArrays(GL_LINE_STRIP, 0, splineVertexCnt[i]);
+    glDrawArrays(GL_TRIANGLES, 0, splineSquareEBOCnt[i]);
+    // glDrawElements(GL_TRIANGLES, splineSquareEBOCnt[i], GL_UNSIGNED_INT, (void*)0);
     glBindVertexArray(0);
   }
 }
 
-void add_square_rail_points (glm::vec3* pointPositions, glm::vec3* squarePositions, int splineIdx, int pointCnt) {
+void add_square_rail_points (glm::vec3* squarePositions, int splineIdx, int pointCnt) {
   int squarePointCnt = 0;
   for (int i=0; i<pointCnt; ++i) {
     Point p_0 = splinePointCoords[splineIdx][i];
@@ -673,16 +678,49 @@ void add_square_rail_points (glm::vec3* pointPositions, glm::vec3* squarePositio
     v_2 = p_0 + (n_0 - b_0) * param_rail_scale;
     v_3 = p_0 + (Point(0,0,0) - n_0 - b_0) * param_rail_scale;
 
-    squarePositions[squarePointCnt] = glm::vec3(v_0.x, v_0.y, v_0.z);
-    squarePositions[squarePointCnt+1] = glm::vec3(v_1.x, v_1.y, v_1.z);
-    squarePositions[squarePointCnt+2] = glm::vec3(v_2.x, v_2.y, v_2.z);
-    squarePositions[squarePointCnt+3] = glm::vec3(v_3.x, v_3.y, v_3.z);
-    squarePointCnt += 4;
+    squarePositions[squarePointCnt++] = glm::vec3(v_0.x, v_0.y, v_0.z);
+    squarePositions[squarePointCnt++] = glm::vec3(v_1.x, v_1.y, v_1.z);
+    squarePositions[squarePointCnt++] = glm::vec3(v_2.x, v_2.y, v_2.z);
+    squarePositions[squarePointCnt++] = glm::vec3(v_3.x, v_3.y, v_3.z);
   }
 }
 
-void compute_square_rail_idx (glm::vec3* squareIdx, glm::vec3* squarePositions, int splineIdx, int pointCnt) {
-  
+// TODO: change to store to glm::vec3
+void compute_square_rail_idx (glm::vec3* squareTrianglePositions, glm::vec4* squareColors, glm::vec3* squarePositions, int pointCnt, int splineIdx) {
+  int currCnt = 0;
+  for (int i=0; i<pointCnt-1; ++i) {
+    // TODO: change these into a for loop
+    // right
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 0];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 4];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 1];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 4];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 5];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 1];
+    // top
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 1];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 5];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 2];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 5];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 6];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 2];
+    // left
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 2];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 6];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 3];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 6];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 7];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 3];
+    // bottom
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 3];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 7];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 0];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 7];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 4];
+    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 0];
+
+  }
+  cout << "In idx: " << currCnt << endl;
 }
 
 void compute_store_points_tangents (glm::vec3* pointPositions, int splineIdx, int pointCnt, int u_cnt, Point& p_1, Point& p_2, Point& p_3, Point& p_4) {
@@ -740,7 +778,6 @@ void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePosi
   cout << "IN func: " << pointCnt << endl;
 
   // Compute initial Frenet Frame vectors
-  Point initial_V(0.0, 0.0, 1.0);
   Point T_0 = splineTangents[splineIdx][0];
   Point N_0 = normalize(T_0.cross(initial_V));
   Point B_0 = normalize(T_0.cross(N_0));
@@ -752,7 +789,7 @@ void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePosi
   }
 
   // TODO: check this
-  add_square_rail_points(pointPositions, squarePositions, splineIdx, pointCnt);
+  add_square_rail_points(squarePositions, splineIdx, pointCnt);
 }
 
 void initScene(int argc, char *argv[])
@@ -790,6 +827,7 @@ void initScene(int argc, char *argv[])
     int uNumPoints = ((int)(1.0 / param_u_step)) * (currNumCtrlPts - 3) + 1;
 
     GLuint currVBO, currVAO;
+    GLuint currEBO;
 
     bool connect_prev = false;
     if (i > 0) {
@@ -813,22 +851,36 @@ void initScene(int argc, char *argv[])
     cout << "uNum: " << uNumPoints << endl;
     // TODO: only keep one of these two
     glm::vec3* pointPositions = new glm::vec3[uNumPoints];
-    glm::vec3* squarePositions = new glm::vec3[uNumPoints*4];
-    unsigned int* squareIndex = new unsigned int[squareIdxCnt];
+    glm::vec3* squarePositions = new glm::vec3[uNumPoints * 4];
+    glm::vec3* squareTrianglePositions = new glm::vec3[squareIdxCnt];
+    // unsigned int* squareIndex = new unsigned int[squareIdxCnt];
 
     // TODO: move color computation to vertex shader
     glm::vec4* pointColors = new glm::vec4[uNumPoints];
+    glm::vec4* squareColors = new glm::vec4[squareIdxCnt];
 
     // Disable multiple curve connection
     // connect_prev = false;
     // connect_next = false;
     
     compute_catmull_rom_point(pointPositions, squarePositions, splines[i].points, currNumCtrlPts, i, prev_1_point, prev_2_point, next_1_point, connect_prev, connect_next);
-  
-    cout << "GOTHERE " << endl;
-    // Set colors
-    for (int i=0; i<uNumPoints; ++i) {
-      pointColors[i] = glm::vec4(1.0, 1.0, 1.0, 1.0);
+
+    // Set colors for line track
+    for (int j=0; j<uNumPoints; ++j) {
+      pointColors[j] = glm::vec4(1.0, 1.0, 1.0, 1.0);
+    }
+    // Set colors for square track as normal
+    for (int j=0; j<uNumPoints-1; ++j) {
+      for (int k=0; k<6; ++k) {
+          // bottom right: right
+          squareColors[j*24+k] = glm::vec4(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z, 1.0);
+          // top right: top
+          squareColors[j*24+1*6+k] = glm::vec4(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z, 1.0);
+          // top left: left
+          squareColors[j*24+2*6+k] = glm::vec4(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z, 1.0);
+          // bottom left: bottom
+          squareColors[j*24+3*6+k] = glm::vec4(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z, 1.0);
+      }
     }
     
     // DEBUG output
@@ -836,19 +888,21 @@ void initScene(int argc, char *argv[])
     //   cout << pointPositions[i][0] << ", " << pointPositions[i][1] << ", " << pointPositions[i][2] << endl;
     // }
 
-    // TODO: add function to compute eight points for cross-section for every two points on rail
+    // TODO: add triangle vertex for square track
+    compute_square_rail_idx(squareTrianglePositions, squareColors, squarePositions, uNumPoints, i);
 
     // Set positions VBO
     glGenBuffers(1, &currVBO);
     glBindBuffer(GL_ARRAY_BUFFER, currVBO);
-    // glBufferData(GL_ARRAY_BUFFER, sizeof(pointPositions) + sizeof(pointColors), nullptr, GL_STATIC_DRAW);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints + sizeof(glm::vec4) * uNumPoints, nullptr, GL_STATIC_DRAW);
+
+    // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints + sizeof(glm::vec4) * uNumPoints, nullptr, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * squareIdxCnt + sizeof(glm::vec4) * squareIdxCnt, nullptr, GL_STATIC_DRAW);
     // Upload position data
-    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(pointPositions), pointPositions);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * uNumPoints, pointPositions);
+    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * uNumPoints, pointPositions);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * squareIdxCnt, squareTrianglePositions);
     // Upload color data
-    // glBufferSubData(GL_ARRAY_BUFFER, sizeof(pointPositions), sizeof(pointColors), pointColors);
-    glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints, sizeof(glm::vec4) * uNumPoints, pointColors);
+    // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints, sizeof(glm::vec4) * uNumPoints, pointColors);
+    glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * squareIdxCnt, sizeof(glm::vec4) * squareIdxCnt, squareColors);
 
     glGenVertexArrays(1, &currVAO);
     glBindVertexArray(currVAO);
@@ -865,18 +919,31 @@ void initScene(int argc, char *argv[])
     loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
     glEnableVertexAttribArray(loc);
     // offset = (const void*) sizeof(pointPositions);
-    offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
+    // offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
+    offset = (const void*) (sizeof(glm::vec3) * squareIdxCnt);
     glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
+
+    // // Bind EBO: --------------------------------------> EXTRA CREDIT!!
+    // glGenBuffers(1, &currEBO);
+    // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currEBO);
+    // // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(wireIndex), wireIndex, GL_STATIC_DRAW);
+    // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * squareIdxCnt, squareIndex, GL_STATIC_DRAW);
 
     glBindVertexArray(0); // Unbind the VAO
     glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+    // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
 
     splineVBOs.push_back(currVBO);
     splineVAOs.push_back(currVAO);
     splineVertexCnt.push_back(uNumPoints);
+    splineSquareEBOCnt.push_back(24 * (uNumPoints - 1));
 
     delete [] pointColors;
     delete [] pointPositions;
+    delete [] squareColors;
+    delete [] squarePositions;
+    delete [] squareTrianglePositions;
+    // delete [] squareIndex;
     // delete [] tangentPoints;
   }
 
