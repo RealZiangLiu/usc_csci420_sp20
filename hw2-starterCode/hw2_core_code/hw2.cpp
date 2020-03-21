@@ -41,6 +41,7 @@ using namespace std;
 // Constant parameters
 const double param_s = 0.5;
 const double param_u_step = 0.001;
+const int speed = 5;
 
 // represents one control point along the spline 
 struct Point 
@@ -70,13 +71,24 @@ struct Point
     return Point(x / div, y / div, z / div);
   }
 
+  void normalize () {
+    double norm = sqrt(x * x + y * y + z * z);
+    x /= norm;
+    y /= norm;
+    z /= norm;
+  }
+
   Point cross (Point& other) {
     Point res(y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x);
     double norm = sqrt(res.x * res.x + res.y * res.y + res.z * res.z);
-    cout << norm << endl;
     return res / norm;
   }
 };
+
+Point normalize (Point& pt) {
+  double norm = sqrt(pt.x * pt.x + pt.y * pt.y + pt.z * pt.z);
+  return pt / norm;
+}
 
 // spline struct 
 // contains how many control points the spline has, and an array of control points 
@@ -132,11 +144,8 @@ struct CatmullMatrix
       final_res[1] += (first_res[i] * control[i].y);
       final_res[2] += (first_res[i] * control[i].z);
     }
-    double norm = sqrt(final_res[0]*final_res[0] + final_res[1]*final_res[1] + final_res[2]*final_res[2]);
-    final_res[0] /= norm;
-    final_res[1] /= norm;
-    final_res[2] /= norm;
-    return Point(final_res[0], final_res[1], final_res[2]);
+    Point res(final_res[0], final_res[1], final_res[2]);
+    return normalize(res);
   }
 };
 
@@ -419,7 +428,7 @@ void displayFunc()
     matrix.GetMatrix(p);
   }
   // ++roller_frame_count;
-  roller_frame_count += 10;
+  roller_frame_count += speed;
 
   // DEBUG print
   cout << "Coord: " << splineTangents[0][roller_frame_count].x << " " << splineTangents[0][roller_frame_count].y << " " << splineTangents[0][roller_frame_count].z << endl;
