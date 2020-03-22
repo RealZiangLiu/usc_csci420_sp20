@@ -182,10 +182,10 @@ int camera_on_rail = 0;
 
 int roller_frame_count = 0;
 
-
-GLuint VBO;
-GLuint VAO;
-GLuint EBO;
+// Global arrays
+GLuint groundVBO, groundVAO;
+// texture handles
+GLuint groundHandle;
 
 vector<GLuint> splineVBOs;
 vector<GLuint> splineVAOs;
@@ -193,18 +193,16 @@ vector<int> splineVertexCnt;
 vector<int> splineSquareEBOCnt;
 
 // store point positions along spline
-vector< vector<Point> > splinePointCoords;
-vector< vector<Point> > splineTangents;
-vector< vector<Point> > splineNormals;
-vector< vector<Point> > splineBinormals;
+vector< vector<Point> > splinePointCoords, splineTangents, splineNormals, splineBinormals;
 
 OpenGLMatrix matrix;
-BasicPipelineProgram * pipelineProgram;
+BasicPipelineProgram * milestonePipelineProgram, *texturePipelineProgram;
 
 int frame_cnt = 0;
 
 // void renderWireframe();
 void renderSplines();
+void renderTexture();
 
 int loadSplines(char * argv) 
 {
@@ -338,6 +336,65 @@ int initTexture(const char * imageFilename, GLuint textureHandle)
   return 0;
 }
 
+void loadGroundTexture () {
+  glGenTextures(1, &groundHandle);
+
+  int code = initTexture("texture_stone.jpg", groundHandle);
+  if (code != 0) {
+    printf("Error loading the texture image.\n");
+    exit(EXIT_FAILURE); 
+  }
+  glm::vec3* groundPositions = new glm::vec3[6];
+  glm::vec2* groundTexCoords = new glm::vec2[6];
+
+  // Populate positions array
+  groundPositions[0] = glm::vec3(100, 0, 100);
+  groundPositions[1] = glm::vec3(100, 0, -100);
+  groundPositions[2] = glm::vec3(-100, 0, -100);
+  groundPositions[3] = glm::vec3(100, 0, 100);
+  groundPositions[4] = glm::vec3(-100, 0, 100);
+  groundPositions[5] = glm::vec3(-100, 0, -100);
+
+  groundTexCoords[0] = glm::vec2(1, 0);
+  groundTexCoords[1] = glm::vec2(1, 1);
+  groundTexCoords[2] = glm::vec2(0, 1);
+  groundTexCoords[3] = glm::vec2(1, 0);
+  groundTexCoords[4] = glm::vec2(0, 0);
+  groundTexCoords[5] = glm::vec2(0, 1);
+  // ============================= Bind texture VAO and VBO ========================
+  // Set positions VBO
+  glGenBuffers(1, &groundVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, groundVBO);
+  
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * 6 + sizeof(glm::vec2) * 6, nullptr, GL_STATIC_DRAW);
+  // Upload position data
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * 6, groundPositions);
+  // Upload texCoord data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * 6, sizeof(glm::vec2) * 6, groundTexCoords);
+  // Set VAO
+  glGenVertexArrays(1, &groundVAO);
+  glBindVertexArray(groundVAO);
+  // Bind vbo
+  glBindBuffer(GL_ARRAY_BUFFER, groundVBO);
+  // Set "position" layout
+  GLuint loc = glGetAttribLocation(texturePipelineProgram->GetProgramHandle(), "position");
+  glEnableVertexAttribArray(loc); 
+  const void * offset = (const void*) 0;
+  GLsizei stride = 0;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "texCoord" layout
+  loc = glGetAttribLocation(texturePipelineProgram->GetProgramHandle(), "texCoord");
+  glEnableVertexAttribArray(loc);
+  // offset = (const void*) sizeof(pointPositions);
+  // offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
+  offset = (const void*) (sizeof(glm::vec3) * 6);
+  glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride, offset);
+
+  glBindVertexArray(0); // Unbind the VAO
+  glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+  // ======================== End texture VAO/VBO Binding ===========================
+}
+
 // write a screenshot to the specified filename
 void saveScreenshot(const char * filename)
 {
@@ -436,29 +493,63 @@ void displayFunc()
   // DEBUG print
   // cout << "Coord: " << splinePointCoords[0][roller_frame_count].x << " " << splinePointCoords[0][roller_frame_count].y << " " << splinePointCoords[0][roller_frame_count].z << endl;
 
+  // ================================= Set milestone pipeline program =================================
   // get a handle to the program
-  GLuint program = pipelineProgram->GetProgramHandle();
+  GLuint milestoneProgram = milestonePipelineProgram->GetProgramHandle();
   // get a handle to the modelViewMatrix shader variable
-  GLint h_modelViewMatrix = glGetUniformLocation(program, "modelViewMatrix"); 
+  GLint h_modelViewMatrix_milestone = glGetUniformLocation(milestoneProgram, "modelViewMatrix"); 
   // get a handle to the projectionMatrix shader variable
-  GLint h_projectionMatrix = glGetUniformLocation(program, "projectionMatrix"); 
+  GLint h_projectionMatrix_milestone = glGetUniformLocation(milestoneProgram, "projectionMatrix"); 
   // Get handle to mode shader variable
-  GLint h_mode = glGetUniformLocation(program, "mode");
+  GLint h_mode_milestone = glGetUniformLocation(milestoneProgram, "mode");
 
   // bind shader
-  pipelineProgram->Bind();
+  milestonePipelineProgram->Bind();
 
   // Upload matrices to GPU
   GLboolean isRowMajor = GL_FALSE;
-  glUniformMatrix4fv(h_modelViewMatrix, 1, isRowMajor, m);
-  glUniformMatrix4fv(h_projectionMatrix, 1, isRowMajor, p);
+  glUniformMatrix4fv(h_modelViewMatrix_milestone, 1, isRowMajor, m);
+  glUniformMatrix4fv(h_projectionMatrix_milestone, 1, isRowMajor, p);
 
   // set variable
-  pipelineProgram->SetModelViewMatrix(m);
-  pipelineProgram->SetProjectionMatrix(p);
+  milestonePipelineProgram->SetModelViewMatrix(m);
+  milestonePipelineProgram->SetProjectionMatrix(p);
+  // ================================= End milestone pipeline program =================================
 
-  // renderWireframe();
   renderSplines();
+
+
+
+  // ================================= Set texture pipeline program =================================
+  // get a handle to the program
+  GLuint textureProgram = texturePipelineProgram->GetProgramHandle();
+  // get a handle to the modelViewMatrix shader variable
+  GLint h_modelViewMatrix_texture = glGetUniformLocation(textureProgram, "modelViewMatrix"); 
+  // get a handle to the projectionMatrix shader variable
+  GLint h_projectionMatrix_texture = glGetUniformLocation(textureProgram, "projectionMatrix"); 
+  // Get handle to mode shader variable
+  GLint h_mode_texture = glGetUniformLocation(textureProgram, "mode");
+
+  // bind shader
+  texturePipelineProgram->Bind();
+
+  // Upload matrices to GPU
+  glUniformMatrix4fv(h_modelViewMatrix_texture, 1, isRowMajor, m);
+  glUniformMatrix4fv(h_projectionMatrix_texture, 1, isRowMajor, p);
+
+  // set variable
+  texturePipelineProgram->SetModelViewMatrix(m);
+  texturePipelineProgram->SetProjectionMatrix(p);
+
+  // select the active texture unit
+  glActiveTexture(GL_TEXTURE0); // it is safe to always use GL_TEXTURE0
+  // select the texture to use (“texHandle” was generated by glGenTextures)
+  glBindTexture(GL_TEXTURE_2D, groundHandle); 
+  // ================================= End milestone pipeline program =================================
+  // renderWireframe();
+
+  renderTexture();
+  
 
   glutSwapBuffers();
 }
@@ -642,19 +733,6 @@ void keyboardFunc(unsigned char key, int x, int y)
   }
 }
 
-
-// void renderPoints() {
-//   glBindVertexArray(pointVAO);
-//   glDrawArrays(GL_POINTS, 0, pointNumVertex);
-//   glBindVertexArray(0);
-// }
-
-// void renderWireframe() {
-//   glBindVertexArray(wireVAO);
-//   glDrawElements(GL_LINES, wireIdxCnt, GL_UNSIGNED_INT, (void*)0);
-//   glBindVertexArray(0);
-// }
-
 void renderSplines () {
   for (size_t i=0; i<numSplines; ++i) {
     glBindVertexArray(splineVAOs[i]);
@@ -663,6 +741,12 @@ void renderSplines () {
     // glDrawElements(GL_TRIANGLES, splineSquareEBOCnt[i], GL_UNSIGNED_INT, (void*)0);
     glBindVertexArray(0);
   }
+}
+
+void renderTexture () {
+  glBindVertexArray(groundVAO);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  glBindVertexArray(0);
 }
 
 void add_square_rail_points (glm::vec3* squarePositions, int splineIdx, int pointCnt) {
@@ -685,7 +769,6 @@ void add_square_rail_points (glm::vec3* squarePositions, int splineIdx, int poin
   }
 }
 
-// TODO: change to store to glm::vec3
 void compute_square_rail_idx (glm::vec3* squareTrianglePositions, glm::vec4* squareColors, glm::vec3* squarePositions, int pointCnt, int splineIdx) {
   int currCnt = 0;
   for (int i=0; i<pointCnt-1; ++i) {
@@ -796,7 +879,6 @@ void initScene(int argc, char *argv[])
 {
    // load the splines from the provided filename
   loadSplines(argv[1]);
-
   printf("Loaded %d spline(s).\n", numSplines);
   for(int i=0; i<numSplines; i++)
     printf("Num control points in spline %d: %d.\n", i, splines[i].numControlPoints);
@@ -805,9 +887,16 @@ void initScene(int argc, char *argv[])
   /*
     Initialize pipelineProgram
   */
-  pipelineProgram = new BasicPipelineProgram;
-  int ret = pipelineProgram->Init(shaderBasePath);
+  milestonePipelineProgram = new BasicPipelineProgram;
+  int ret = milestonePipelineProgram->Init(shaderBasePath, false);
   if (ret != 0) abort();
+
+  texturePipelineProgram = new BasicPipelineProgram;
+  ret = texturePipelineProgram->Init(shaderBasePath, true);
+  if (ret != 0) abort();
+
+  // Load ground texture
+  loadGroundTexture();
 
   Point prev_1_point;
   Point prev_2_point;
@@ -849,7 +938,7 @@ void initScene(int argc, char *argv[])
     int squareIdxCnt = 24 * (uNumPoints - 1);
 
     cout << "uNum: " << uNumPoints << endl;
-    // TODO: only keep one of these two
+
     glm::vec3* pointPositions = new glm::vec3[uNumPoints];
     glm::vec3* squarePositions = new glm::vec3[uNumPoints * 4];
     glm::vec3* squareTrianglePositions = new glm::vec3[squareIdxCnt];
@@ -882,15 +971,11 @@ void initScene(int argc, char *argv[])
           squareColors[j*24+3*6+k] = glm::vec4(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z, 1.0);
       }
     }
-    
-    // DEBUG output
-    // for (int i=0; i<uNumPoints; ++i) {
-    //   cout << pointPositions[i][0] << ", " << pointPositions[i][1] << ", " << pointPositions[i][2] << endl;
-    // }
 
-    // TODO: add triangle vertex for square track
+    // add triangle vertex for square track
     compute_square_rail_idx(squareTrianglePositions, squareColors, squarePositions, uNumPoints, i);
 
+    // =================================================== Bind vertex VAO and VBO ===================================================
     // Set positions VBO
     glGenBuffers(1, &currVBO);
     glBindBuffer(GL_ARRAY_BUFFER, currVBO);
@@ -910,28 +995,23 @@ void initScene(int argc, char *argv[])
     // Bind pointVBO
     glBindBuffer(GL_ARRAY_BUFFER, currVBO);
     // Set "position" layout
-    GLuint loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
+    GLuint loc = glGetAttribLocation(milestonePipelineProgram->GetProgramHandle(), "position");
     glEnableVertexAttribArray(loc); 
     const void * offset = (const void*) 0;
     GLsizei stride = 0;
     glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
     // Set "color" layout
-    loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
+    loc = glGetAttribLocation(milestonePipelineProgram->GetProgramHandle(), "color");
     glEnableVertexAttribArray(loc);
     // offset = (const void*) sizeof(pointPositions);
     // offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
     offset = (const void*) (sizeof(glm::vec3) * squareIdxCnt);
     glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
 
-    // // Bind EBO: --------------------------------------> EXTRA CREDIT!!
-    // glGenBuffers(1, &currEBO);
-    // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currEBO);
-    // // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(wireIndex), wireIndex, GL_STATIC_DRAW);
-    // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned int) * squareIdxCnt, squareIndex, GL_STATIC_DRAW);
-
     glBindVertexArray(0); // Unbind the VAO
     glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
-    // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // Unbind the EBO
+
+    // =================================================== End vertex VAO/VBO Binding ===================================================
 
     splineVBOs.push_back(currVBO);
     splineVAOs.push_back(currVAO);
@@ -943,63 +1023,7 @@ void initScene(int argc, char *argv[])
     delete [] squareColors;
     delete [] squarePositions;
     delete [] squareTrianglePositions;
-    // delete [] squareIndex;
-    // delete [] tangentPoints;
   }
-
-  /*
-  {
-    // glm::vec3 pointPositions[pointNumVertex];
-    glm::vec3* pointPositions = new glm::vec3[pointNumVertex];
-    // glm::vec4 pointColors[pointNumVertex];
-    glm::vec4* pointColors = new glm::vec4[pointNumVertex];
-    for (int x=0; x<imageWidth; ++x) {
-      for (int y=0; y<imageHeight; ++y) {
-        double color_R = heightmapImage->getPixel(x, y, channels[0]) / 255.0;
-        double color_G = heightmapImage->getPixel(x, y, channels[1]) / 255.0;
-        double color_B = heightmapImage->getPixel(x, y, channels[2]) / 255.0;
-        double color_height = (color_R / 3.0 + color_G / 3.0 + color_B / 3.0);
-        pointPositions[y * imageWidth + x] = glm::vec3((double)(x - imageWidth/2.0) / imageWidth * 4, color_height, (double)(y - imageHeight/2.0) / imageHeight * 4);
-        pointColors[y * imageWidth + x] = glm::vec4(color_R, color_G, color_B, 1);
-      }
-    }
-    // Set positions VBO
-    glGenBuffers(1, &pointVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
-    // glBufferData(GL_ARRAY_BUFFER, sizeof(pointPositions) + sizeof(pointColors), nullptr, GL_STATIC_DRAW);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex + sizeof(glm::vec4) * pointNumVertex, nullptr, GL_STATIC_DRAW);
-    // Upload position data
-    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(pointPositions), pointPositions);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * pointNumVertex, pointPositions);
-    // Upload color data
-    // glBufferSubData(GL_ARRAY_BUFFER, sizeof(pointPositions), sizeof(pointColors), pointColors);
-    glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * pointNumVertex, sizeof(glm::vec4) * pointNumVertex, pointColors);
-
-    glGenVertexArrays(1, &pointVAO);
-    glBindVertexArray(pointVAO);
-
-    // Bind pointVBO
-    glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
-    // Set "position" layout
-    GLuint loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "position");
-    glEnableVertexAttribArray(loc); 
-    const void * offset = (const void*) 0;
-    GLsizei stride = 0;
-    glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
-    // Set "color" layout
-    loc = glGetAttribLocation(pipelineProgram->GetProgramHandle(), "color");
-    glEnableVertexAttribArray(loc);
-    // offset = (const void*) sizeof(pointPositions);
-    offset = (const void*) (sizeof(glm::vec3) * pointNumVertex);
-    glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
-
-    glBindVertexArray(0); // Unbind the VAO
-    glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
-
-    delete [] pointPositions;
-    delete [] pointColors;
-  } 
-  */
   glEnable(GL_DEPTH_TEST);
 
   std::cout << "GL error: " << glGetError() << std::endl;

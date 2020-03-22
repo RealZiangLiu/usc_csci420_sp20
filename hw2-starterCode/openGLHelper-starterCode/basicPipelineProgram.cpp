@@ -5,9 +5,16 @@
 
 using namespace std;
 
-int BasicPipelineProgram::Init(const char * shaderBasePath) 
+int BasicPipelineProgram::Init(const char * shaderBasePath, bool textureMode) 
 {
-  if (BuildShadersFromFiles(shaderBasePath, "basic.vertexShader.glsl", "basic.fragmentShader.glsl") != 0)
+  const char* vertexShaderFile = "basic.vertexShader.glsl";
+  const char* fragmentShaderFile = "basic.fragmentShader.glsl";
+  if (textureMode) {
+    vertexShaderFile = "basic.textureVertexShader.glsl";
+    fragmentShaderFile = "basic.textureFragmentShader.glsl";
+  }
+
+  if (BuildShadersFromFiles(shaderBasePath, vertexShaderFile, fragmentShaderFile) != 0)
   {
     cout << "Failed to build the pipeline program." << endl;
     return 1;

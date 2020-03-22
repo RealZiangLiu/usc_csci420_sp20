@@ -3,7 +3,7 @@
 class BasicPipelineProgram : public PipelineProgram
 {
 public:
-  int Init(const char * shaderBasePath); // Init the program; "shaderBasePath" is the path to the folder containing the shaders.
+  int Init(const char * shaderBasePath, bool textureMode); // Init the program; "shaderBasePath" is the path to the folder containing the shaders.
   void SetModelViewMatrix(const float * m); // m is column-major
   void SetProjectionMatrix(const float * m); // m is column-major
 
