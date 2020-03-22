@@ -43,6 +43,14 @@ const double param_s = 0.5;
 const double param_u_step = 0.001;
 const int param_speed = 5;
 const double param_rail_scale = 0.01;
+const float param_La[4] = {1, 1, 1, 1.0};
+const float param_Ld[4] = {1, 1, 1, 1.0};
+const float param_Ls[4] = {1, 1, 1, 1.0};
+const float param_alpha = 51.2;
+const float param_ka[4] = {0.24725, 0.1995, 0.0745, 1.0};
+const float param_kd[4] = {0.75164, 0.60648, 0.22648, 1.0};
+const float param_ks[4] = {0.628281, 0.555802, 0.366065, 1.0};
+
 
 // represents one control point along the spline 
 struct Point 
@@ -502,6 +510,32 @@ void displayFunc()
   GLint h_projectionMatrix_milestone = glGetUniformLocation(milestoneProgram, "projectionMatrix"); 
   // Get handle to mode shader variable
   GLint h_mode_milestone = glGetUniformLocation(milestoneProgram, "mode");
+  // get a handle to the viewLightDirection shader variable
+  GLint h_viewLightDirection = glGetUniformLocation(milestoneProgram, "viewLightDirection"); 
+  // get a handle to the normalMatrix shader variable
+  GLint h_normalMatrix = glGetUniformLocation(milestoneProgram, "normalMatrix"); 
+  // get a handle to all those constants
+  GLint h_La = glGetUniformLocation(milestoneProgram, "La");
+  GLint h_Ld = glGetUniformLocation(milestoneProgram, "Ld");
+  GLint h_Ls = glGetUniformLocation(milestoneProgram, "Ls");
+  GLint h_alpha = glGetUniformLocation(milestoneProgram, "alpha");
+  GLint h_ka = glGetUniformLocation(milestoneProgram, "ka");
+  GLint h_kd = glGetUniformLocation(milestoneProgram, "kd");
+  GLint h_ks = glGetUniformLocation(milestoneProgram, "ks");
+
+  float n[16];
+  matrix.SetMatrixMode(OpenGLMatrix::ModelView);
+  matrix.GetNormalMatrix(n); // get normal matrix
+
+  // the “Sun” at noon
+  float lightDirection[3] = { 0, 1, 0 };
+  // light direction in the view space
+  float viewLightDirection[3]; 
+  // Compute viewLightDirection
+  viewLightDirection[0] = m[0] * lightDirection[0] + m[4] * lightDirection[1] + m[8] * lightDirection[2];
+  viewLightDirection[1] = m[1] * lightDirection[0] + m[5] * lightDirection[1] + m[9] * lightDirection[2];
+  viewLightDirection[2] = m[2] * lightDirection[0] + m[6] * lightDirection[1] + m[10] * lightDirection[2];
+
 
   // bind shader
   milestonePipelineProgram->Bind();
@@ -510,6 +544,19 @@ void displayFunc()
   GLboolean isRowMajor = GL_FALSE;
   glUniformMatrix4fv(h_modelViewMatrix_milestone, 1, isRowMajor, m);
   glUniformMatrix4fv(h_projectionMatrix_milestone, 1, isRowMajor, p);
+  // upload viewLightDirection to the GPU
+  glUniform3fv(h_viewLightDirection, 1, viewLightDirection);
+  // upload n to the GPU
+  glUniformMatrix4fv(h_normalMatrix, 1, isRowMajor, n);
+  // upload light && material parameters to GPU
+  glUniform4fv(h_La, 1, param_La);
+  glUniform4fv(h_Ld, 1, param_Ld);
+  glUniform4fv(h_Ls, 1, param_Ls);
+  glUniform1f(h_alpha, param_alpha);
+  glUniform4fv(h_ka, 1, param_ka);
+  glUniform4fv(h_kd, 1, param_kd);
+  glUniform4fv(h_ks, 1, param_ks);
+
 
   // set variable
   milestonePipelineProgram->SetModelViewMatrix(m);
@@ -769,7 +816,7 @@ void add_square_rail_points (glm::vec3* squarePositions, int splineIdx, int poin
   }
 }
 
-void compute_square_rail_idx (glm::vec3* squareTrianglePositions, glm::vec4* squareColors, glm::vec3* squarePositions, int pointCnt, int splineIdx) {
+void compute_square_rail_idx (glm::vec3* squareTrianglePositions, glm::vec3* squareColors, glm::vec3* squarePositions, int pointCnt, int splineIdx) {
   int currCnt = 0;
   for (int i=0; i<pointCnt-1; ++i) {
     // TODO: change these into a for loop
@@ -946,7 +993,8 @@ void initScene(int argc, char *argv[])
 
     // TODO: move color computation to vertex shader
     glm::vec4* pointColors = new glm::vec4[uNumPoints];
-    glm::vec4* squareColors = new glm::vec4[squareIdxCnt];
+    // TODO: Change this to normal
+    glm::vec3* squareColors = new glm::vec3[squareIdxCnt];
 
     // Disable multiple curve connection
     // connect_prev = false;
@@ -962,13 +1010,13 @@ void initScene(int argc, char *argv[])
     for (int j=0; j<uNumPoints-1; ++j) {
       for (int k=0; k<6; ++k) {
           // bottom right: right
-          squareColors[j*24+k] = glm::vec4(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z, 1.0);
+          squareColors[j*24+k] = glm::vec3(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z);
           // top right: top
-          squareColors[j*24+1*6+k] = glm::vec4(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z, 1.0);
+          squareColors[j*24+1*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
           // top left: left
-          squareColors[j*24+2*6+k] = glm::vec4(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z, 1.0);
+          squareColors[j*24+2*6+k] = glm::vec3(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z);
           // bottom left: bottom
-          squareColors[j*24+3*6+k] = glm::vec4(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z, 1.0);
+          squareColors[j*24+3*6+k] = glm::vec3(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z);
       }
     }
 
@@ -981,13 +1029,13 @@ void initScene(int argc, char *argv[])
     glBindBuffer(GL_ARRAY_BUFFER, currVBO);
 
     // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints + sizeof(glm::vec4) * uNumPoints, nullptr, GL_STATIC_DRAW);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * squareIdxCnt + sizeof(glm::vec4) * squareIdxCnt, nullptr, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * squareIdxCnt + sizeof(glm::vec3) * squareIdxCnt, nullptr, GL_STATIC_DRAW);
     // Upload position data
     // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * uNumPoints, pointPositions);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * squareIdxCnt, squareTrianglePositions);
     // Upload color data
     // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints, sizeof(glm::vec4) * uNumPoints, pointColors);
-    glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * squareIdxCnt, sizeof(glm::vec4) * squareIdxCnt, squareColors);
+    glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * squareIdxCnt, sizeof(glm::vec3) * squareIdxCnt, squareColors);
 
     glGenVertexArrays(1, &currVAO);
     glBindVertexArray(currVAO);
@@ -1001,12 +1049,12 @@ void initScene(int argc, char *argv[])
     GLsizei stride = 0;
     glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
     // Set "color" layout
-    loc = glGetAttribLocation(milestonePipelineProgram->GetProgramHandle(), "color");
+    loc = glGetAttribLocation(milestonePipelineProgram->GetProgramHandle(), "normal");
     glEnableVertexAttribArray(loc);
     // offset = (const void*) sizeof(pointPositions);
     // offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
     offset = (const void*) (sizeof(glm::vec3) * squareIdxCnt);
-    glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, stride, offset);
+    glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
 
     glBindVertexArray(0); // Unbind the VAO
     glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
