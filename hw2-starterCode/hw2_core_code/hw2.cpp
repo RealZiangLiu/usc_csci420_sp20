@@ -41,8 +41,8 @@ using namespace std;
 // Constant parameters
 const double param_s = 0.5;
 const double param_u_step = 0.001;
-const int param_speed = 10;
-const double param_rail_scale = 0.01;
+const int param_speed = 2;
+const double param_rail_scale = 0.05;
 const float param_La[4] = {0.8, 0.8, 1, 1.0};
 const float param_Ld[4] = {0.8, 0.8, 0.5, 1.0};
 const float param_Ls[4] = {1, 0.9, 0.8, 1.0};
@@ -50,6 +50,9 @@ const float param_alpha = 51.2;
 const float param_ka[4] = {0.24725, 0.1995, 0.0745, 1.0};
 const float param_kd[4] = {0.75164, 0.60648, 0.22648, 1.0};
 const float param_ks[4] = {0.628281, 0.555802, 0.366065, 1.0};
+
+// the “Sun” at noon
+const float lightDirection[3] = { -1, 0, 0 };
 
 
 // represents one control point along the spline 
@@ -159,7 +162,7 @@ struct CatmullMatrix
 
 CatmullMatrix computeMatrix;
 
-Point initial_V(0.0, 1.0, 0.0);
+Point initial_V(0.0, 0.0, -1.0);
 
 // the spline array 
 Spline * splines;
@@ -356,12 +359,12 @@ void loadGroundTexture () {
   glm::vec2* groundTexCoords = new glm::vec2[6];
 
   // Populate positions array
-  groundPositions[0] = glm::vec3(100, 0, 100);
-  groundPositions[1] = glm::vec3(100, 0, -100);
-  groundPositions[2] = glm::vec3(-100, 0, -100);
-  groundPositions[3] = glm::vec3(100, 0, 100);
-  groundPositions[4] = glm::vec3(-100, 0, 100);
-  groundPositions[5] = glm::vec3(-100, 0, -100);
+  groundPositions[0] = glm::vec3(100, -10, 100);
+  groundPositions[1] = glm::vec3(100, -10, -100);
+  groundPositions[2] = glm::vec3(-100, -10, -100);
+  groundPositions[3] = glm::vec3(100, -10, 100);
+  groundPositions[4] = glm::vec3(-100, -10, 100);
+  groundPositions[5] = glm::vec3(-100, -10, -100);
 
   groundTexCoords[0] = glm::vec2(1, 0);
   groundTexCoords[1] = glm::vec2(1, 1);
@@ -476,12 +479,12 @@ void displayFunc()
     matrix.SetMatrixMode(OpenGLMatrix::ModelView);
     matrix.LoadIdentity();
     int focusIdx = (roller_frame_count+1) % splineVertexCnt[0];
-    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.04 * splineNormals[0][roller_frame_count].x, 
-                  splinePointCoords[0][roller_frame_count].y + 0.04 * splineNormals[0][roller_frame_count].y,
-                  splinePointCoords[0][roller_frame_count].z + 0.04 * splineNormals[0][roller_frame_count].z, // eye point
-                  splinePointCoords[0][focusIdx].x + 0.04 * splineNormals[0][focusIdx].x, 
-                  splinePointCoords[0][focusIdx].y + 0.04 * splineNormals[0][focusIdx].y,
-                  splinePointCoords[0][focusIdx].z + 0.04 * splineNormals[0][focusIdx].z,          // focus point          
+    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.13 * splineNormals[0][roller_frame_count].x, 
+                  splinePointCoords[0][roller_frame_count].y + 0.13 * splineNormals[0][roller_frame_count].y,
+                  splinePointCoords[0][roller_frame_count].z + 0.13 * splineNormals[0][roller_frame_count].z, // eye point
+                  splinePointCoords[0][focusIdx].x + 0.13 * splineNormals[0][focusIdx].x, 
+                  splinePointCoords[0][focusIdx].y + 0.13 * splineNormals[0][focusIdx].y,
+                  splinePointCoords[0][focusIdx].z + 0.13 * splineNormals[0][focusIdx].z,          // focus point          
                   splineNormals[0][roller_frame_count].x,
                   splineNormals[0][roller_frame_count].y,
                   splineNormals[0][roller_frame_count].z);
@@ -527,8 +530,6 @@ void displayFunc()
   matrix.SetMatrixMode(OpenGLMatrix::ModelView);
   matrix.GetNormalMatrix(n); // get normal matrix
 
-  // the “Sun” at noon
-  float lightDirection[3] = { 0, 1, 0 };
   // light direction in the view space
   float viewLightDirection[3]; 
   // Compute viewLightDirection
