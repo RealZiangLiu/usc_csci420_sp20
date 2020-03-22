@@ -41,7 +41,7 @@ using namespace std;
 // Constant parameters
 const double param_s = 0.5;
 const double param_u_step = 0.001;
-const int param_speed = 5;
+const int param_speed = 10;
 const double param_rail_scale = 0.01;
 const float param_La[4] = {0.8, 0.8, 1, 1.0};
 const float param_Ld[4] = {0.8, 0.8, 0.5, 1.0};
@@ -917,8 +917,7 @@ void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePosi
     splineNormals[splineIdx].push_back(normalize(splineBinormals[splineIdx][i-1].cross(splineTangents[splineIdx][i])));
     splineBinormals[splineIdx].push_back(normalize(splineTangents[splineIdx][i].cross(splineNormals[splineIdx][i])));
   }
-
-  // TODO: check this
+  // Add four square vertices for each spline point
   add_square_rail_points(squarePositions, splineIdx, pointCnt);
 }
 
@@ -991,7 +990,7 @@ void initScene(int argc, char *argv[])
     glm::vec3* squareTrianglePositions = new glm::vec3[squareIdxCnt];
     // unsigned int* squareIndex = new unsigned int[squareIdxCnt];
 
-    // TODO: move color computation to vertex shader
+    // TODO: remove this.
     glm::vec4* pointColors = new glm::vec4[uNumPoints];
     // TODO: Change this to normal
     glm::vec3* squareColors = new glm::vec3[squareIdxCnt];
