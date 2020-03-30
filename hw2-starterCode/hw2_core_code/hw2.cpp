@@ -41,7 +41,7 @@ using namespace std;
 // Constant parameters
 const double param_s = 0.5;
 const double param_u_step = 0.001;
-const int param_speed = 6;
+const int param_speed = 3;
 const double param_rail_scale = 0.05;
 const float param_La[4] = {0.8, 0.8, 1, 1.0};
 const float param_Ld[4] = {0.8, 0.8, 0.5, 1.0};
@@ -50,6 +50,19 @@ const float param_alpha = 51.2;
 const float param_ka[4] = {0.24725, 0.1995, 0.0745, 1.0};
 const float param_kd[4] = {0.75164, 0.60648, 0.22648, 1.0};
 const float param_ks[4] = {0.628281, 0.555802, 0.366065, 1.0};
+
+const int crossbar_dist = 30;
+const int crossbar_width = 8;
+
+const double bar_l = 1.8;
+const double bar_h = 0.08;
+
+const double ho_1 = 0.00625;
+const double ho_2 = 0.0013;
+const double ho_3 = 0.01;
+const double ve_1 = 0.005333;
+const double ve_2 = 0.01;
+const double ve_3 = 0.00875;
 
 // the “Sun” at noon
 const float lightDirection[3] = { -1, 0, 0 };
@@ -66,6 +79,9 @@ struct Point
 
   Point (double x_, double y_, double z_)
       : x(x_), y(y_), z(z_) {}
+
+  Point (glm::vec3 other)
+      : x(other[0]), y(other[1]), z(other[2]) {}
 
   Point operator- (Point other) {
     return Point(x - other.x, y - other.y, z - other.z);
@@ -195,8 +211,9 @@ int roller_frame_count = 0;
 
 // Global arrays
 GLuint groundVBO, groundVAO;
+GLuint crossbarVBO, crossbarVAO;
 // texture handles
-GLuint groundHandle;
+GLuint groundHandle, crossbarHandle;
 
 vector<GLuint> splineVBOs;
 vector<GLuint> splineVAOs;
@@ -211,9 +228,12 @@ BasicPipelineProgram * milestonePipelineProgram, *texturePipelineProgram;
 
 int frame_cnt = 0;
 
+int crossbar_cnt = 0;
+
 // void renderWireframe();
 void renderSplines();
-void renderTexture();
+void renderGroundTexture();
+void renderCrossbarTexture();
 
 int loadSplines(char * argv) 
 {
@@ -406,6 +426,65 @@ void loadGroundTexture () {
   // ======================== End texture VAO/VBO Binding ===========================
 }
 
+void loadCrossbarTexture (glm::vec3* crossbarTrianglePositions) {
+  // TODO
+  glGenTextures(1, &crossbarHandle);
+
+  int code = initTexture("texture_darkWood.jpg", crossbarHandle);
+  if (code != 0) {
+    printf("Error loading the texture image.\n");
+    exit(EXIT_FAILURE); 
+  }
+
+  int crossbar_vertex_cnt = crossbar_cnt * 18;
+
+  glm::vec2* crossbarTexCoords = new glm::vec2[crossbar_vertex_cnt];
+
+  // Populate positions array
+  for (int i=0; i<crossbar_cnt; i+=2) {
+    for (int j=0; j<6; ++j) {
+      crossbarTexCoords[i * 18 + j * 6] = glm::vec2(1, 0);
+      crossbarTexCoords[i * 18 + j * 6 + 1] = glm::vec2(1, 1);
+      crossbarTexCoords[i * 18 + j * 6 + 2] = glm::vec2(0, 0);
+      crossbarTexCoords[i * 18 + j * 6 + 3] = glm::vec2(1, 1);
+      crossbarTexCoords[i * 18 + j * 6 + 4] = glm::vec2(0, 1);
+      crossbarTexCoords[i * 18 + j * 6 + 5] = glm::vec2(0, 0);
+    }
+  }
+  // ============================= Bind texture VAO and VBO ========================
+  // Set positions VBO
+  glGenBuffers(1, &crossbarVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, crossbarVBO);
+  
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * crossbar_vertex_cnt + sizeof(glm::vec2) * crossbar_vertex_cnt, nullptr, GL_STATIC_DRAW);
+  // Upload position data
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * crossbar_vertex_cnt, crossbarTrianglePositions);
+  // Upload texCoord data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * crossbar_vertex_cnt, sizeof(glm::vec2) * crossbar_vertex_cnt, crossbarTexCoords);
+  // Set VAO
+  glGenVertexArrays(1, &crossbarVAO);
+  glBindVertexArray(crossbarVAO);
+  // Bind vbo
+  glBindBuffer(GL_ARRAY_BUFFER, crossbarVBO);
+  // Set "position" layout
+  GLuint loc = glGetAttribLocation(texturePipelineProgram->GetProgramHandle(), "position");
+  glEnableVertexAttribArray(loc); 
+  const void * offset = (const void*) 0;
+  GLsizei stride = 0;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "texCoord" layout
+  loc = glGetAttribLocation(texturePipelineProgram->GetProgramHandle(), "texCoord");
+  glEnableVertexAttribArray(loc);
+  // offset = (const void*) sizeof(pointPositions);
+  // offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
+  offset = (const void*) (sizeof(glm::vec3) * crossbar_vertex_cnt);
+  glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride, offset);
+
+  glBindVertexArray(0); // Unbind the VAO
+  glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+  // ======================== End texture VAO/VBO Binding ===========================
+}
+
 // write a screenshot to the specified filename
 void saveScreenshot(const char * filename)
 {
@@ -479,12 +558,12 @@ void displayFunc()
     matrix.SetMatrixMode(OpenGLMatrix::ModelView);
     matrix.LoadIdentity();
     int focusIdx = (roller_frame_count+1) % splineVertexCnt[0];
-    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.16 * splineNormals[0][roller_frame_count].x, 
-                  splinePointCoords[0][roller_frame_count].y + 0.16 * splineNormals[0][roller_frame_count].y,
-                  splinePointCoords[0][roller_frame_count].z + 0.16 * splineNormals[0][roller_frame_count].z, // eye point
-                  splinePointCoords[0][focusIdx].x + 0.16 * splineNormals[0][focusIdx].x, 
-                  splinePointCoords[0][focusIdx].y + 0.16 * splineNormals[0][focusIdx].y,
-                  splinePointCoords[0][focusIdx].z + 0.16 * splineNormals[0][focusIdx].z,          // focus point          
+    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.08 * splineNormals[0][roller_frame_count].x, 
+                  splinePointCoords[0][roller_frame_count].y + 0.08 * splineNormals[0][roller_frame_count].y,
+                  splinePointCoords[0][roller_frame_count].z + 0.08 * splineNormals[0][roller_frame_count].z, // eye point
+                  splinePointCoords[0][focusIdx].x + 0.08 * splineNormals[0][focusIdx].x, 
+                  splinePointCoords[0][focusIdx].y + 0.08 * splineNormals[0][focusIdx].y,
+                  splinePointCoords[0][focusIdx].z + 0.08 * splineNormals[0][focusIdx].z,          // focus point          
                   splineNormals[0][roller_frame_count].x,
                   splineNormals[0][roller_frame_count].y,
                   splineNormals[0][roller_frame_count].z);
@@ -591,12 +670,16 @@ void displayFunc()
 
   // select the active texture unit
   glActiveTexture(GL_TEXTURE0); // it is safe to always use GL_TEXTURE0
-  // select the texture to use (“texHandle” was generated by glGenTextures)
-  glBindTexture(GL_TEXTURE_2D, groundHandle); 
   // ================================= End milestone pipeline program =================================
   // renderWireframe();
+  // select the texture to use (“texHandle” was generated by glGenTextures)
+  glBindTexture(GL_TEXTURE_2D, groundHandle); 
+  renderGroundTexture();
+  glBindTexture(GL_TEXTURE_2D, 0); 
 
-  renderTexture();
+  glBindTexture(GL_TEXTURE_2D, crossbarHandle); 
+  renderCrossbarTexture();
+  glBindTexture(GL_TEXTURE_2D, 0); 
   
 
   glutSwapBuffers();
@@ -798,47 +881,64 @@ void renderSplines () {
   }
 }
 
-void renderTexture () {
+void renderGroundTexture () {
   glBindVertexArray(groundVAO);
   glDrawArrays(GL_TRIANGLES, 0, 6);
   glBindVertexArray(0);
 }
 
-void add_square_rail_points (glm::vec3* squarePositions, int splineIdx, int pointCnt) {
-  int squarePointCnt = 0;
-  for (int i=0; i<pointCnt; ++i) {
-    Point p_0 = splinePointCoords[splineIdx][i];
-    Point n_0 = splineNormals[splineIdx][i];
-    Point b_0 = splineBinormals[splineIdx][i];
+void renderCrossbarTexture () {
+  glBindVertexArray(crossbarVAO);
+  glDrawArrays(GL_TRIANGLES, 0, crossbar_cnt * 18);
+  glBindVertexArray(0);
+}
 
-    Point v_0, v_1, v_2, v_3, v_4;
-    v_0 = p_0 + (b_0 - n_0) * param_rail_scale;
-    v_1 = p_0 + (n_0 + b_0) * param_rail_scale;
-    v_2 = p_0 + (n_0 - b_0) * param_rail_scale;
-    v_3 = p_0 + (Point(0,0,0) - n_0 - b_0) * param_rail_scale;
+void add_cross_bar_points (vector<Point>& crossbarPositions, int splineIdx, int pointCnt) {
+  int crossBarPointCnt = 0;
+  for (int i=crossbar_dist / 2 + crossbar_width; i<pointCnt; i+=crossbar_dist) {
+    Point p_0_0 = splinePointCoords[splineIdx][i - crossbar_width];
+    Point n_0_0 = splineNormals[splineIdx][i - crossbar_width];
+    Point b_0_0 = splineBinormals[splineIdx][i - crossbar_width];
 
-    squarePositions[squarePointCnt++] = glm::vec3(v_0.x, v_0.y, v_0.z);
-    squarePositions[squarePointCnt++] = glm::vec3(v_1.x, v_1.y, v_1.z);
-    squarePositions[squarePointCnt++] = glm::vec3(v_2.x, v_2.y, v_2.z);
-    squarePositions[squarePointCnt++] = glm::vec3(v_3.x, v_3.y, v_3.z);
+    Point p_0_1 = splinePointCoords[splineIdx][i];
+    Point n_0_1 = splineNormals[splineIdx][i];
+    Point b_0_1 = splineBinormals[splineIdx][i];
+
+    Point offset_0 = splineNormals[splineIdx][i - crossbar_width] * (-ve_3 - bar_h / 20);
+    Point offset_1 = splineNormals[splineIdx][i] * (-ve_3 - bar_h / 20);
+
+    Point v_0, v_1, v_2, v_3, v_4, v_5, v_6, v_7;
+    v_0 = p_0_0 + (b_0_0 * bar_l - n_0_0 * bar_h) * param_rail_scale;
+    v_1 = p_0_0 + (n_0_0 * bar_h + b_0_0 * bar_l) * param_rail_scale;
+    v_2 = p_0_0 + (n_0_0 * bar_h - b_0_0 * bar_l) * param_rail_scale;
+    v_3 = p_0_0 + (Point(0,0,0) - n_0_0 * bar_h - b_0_0 * bar_l) * param_rail_scale;
+
+    v_4 = p_0_1 + (b_0_1 * bar_l - n_0_1 * bar_h) * param_rail_scale;
+    v_5 = p_0_1 + (n_0_1 * bar_h + b_0_1 * bar_l) * param_rail_scale;
+    v_6 = p_0_1 + (n_0_1 * bar_h - b_0_1 * bar_l) * param_rail_scale;
+    v_7 = p_0_1 + (Point(0,0,0) - n_0_1 * bar_h - b_0_1 * bar_l) * param_rail_scale;
+
+    crossbarPositions.push_back(Point(v_0.x, v_0.y, v_0.z) + offset_0);
+    crossbarPositions.push_back(Point(v_1.x, v_1.y, v_1.z) + offset_0);
+    crossbarPositions.push_back(Point(v_2.x, v_2.y, v_2.z) + offset_0);
+    crossbarPositions.push_back(Point(v_3.x, v_3.y, v_3.z) + offset_0);
+    crossbarPositions.push_back(Point(v_4.x, v_4.y, v_4.z) + offset_1);
+    crossbarPositions.push_back(Point(v_5.x, v_5.y, v_5.z) + offset_1);
+    crossbarPositions.push_back(Point(v_6.x, v_6.y, v_6.z) + offset_1);
+    crossbarPositions.push_back(Point(v_7.x, v_7.y, v_7.z) + offset_1);
+
+    crossbar_cnt += 2;
   }
 }
 
 void add_t_rail_points (glm::vec3* tPositions, int splineIdx, int pointCnt) {
   int tPointCnt = 0;
-  double ho_1 = 0.01875;
-  double ho_2 = 0.0045;
-  double ho_3 = 0.03;
-  double ve_1 = 0.016;
-  double ve_2 = 0.03;
-  double ve_3 = 0.02625;
   for (int i=0; i<pointCnt; ++i) {
     Point p_0 = splinePointCoords[splineIdx][i];
     Point n_0 = splineNormals[splineIdx][i];
     Point b_0 = splineBinormals[splineIdx][i];
 
     Point v_0, v_1, v_2, v_3, v_4, v_5, v_6, v_7, v_8, v_9;
-    // TODO: check this
     v_0 = p_0 + n_0 * ve_2 - b_0 * ho_1;
     v_1 = p_0 + n_0 * ve_2 + b_0 * ho_1;
     v_2 = p_0 + n_0 * ve_1 - b_0 * ho_1;
@@ -863,46 +963,63 @@ void add_t_rail_points (glm::vec3* tPositions, int splineIdx, int pointCnt) {
   }
 }
 
-void compute_square_rail_idx (glm::vec3* squareTrianglePositions, glm::vec3* squareColors, glm::vec3* squarePositions, int pointCnt, int splineIdx) {
-  int currCnt = 0;
-  for (int i=0; i<pointCnt-1; ++i) {
-    // TODO: change these into a for loop
-    // right
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 0];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 4];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 1];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 4];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 5];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 1];
-    // top
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 1];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 5];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 2];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 5];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 6];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 2];
-    // left
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 2];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 6];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 3];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 6];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 7];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 3];
-    // bottom
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 3];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 7];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 0];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 7];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 4];
-    squareTrianglePositions[currCnt++] = squarePositions[i * 4 + 0];
-
-  }
-  cout << "In idx: " << currCnt << endl;
+glm::vec3 point_to_vec3 (const Point& pt) {
+  return glm::vec3(pt.x, pt.y, pt.z);
 }
 
-void compute_t_rail_idx (glm::vec3* tTrianglePositions, glm::vec3* tColors, glm::vec3* tPositions, int pointCnt, int splineIdx, bool left) {
+void compute_cross_bar_idx (glm::vec3* crossbarTrianglePositions, const vector<Point>& crossbarPositions) {
   int currCnt = 0;
-  double mult = left? (-0.15) : 0.15;
+  for (int i=0; i<crossbar_cnt; i+=2) {
+    // right
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 0]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 4]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 1]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 4]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 5]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 1]);
+    // top
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 1]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 5]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 2]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 5]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 6]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 2]);
+    // left
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 2]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 6]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 3]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 6]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 7]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 3]);
+    // bottom
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 3]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 7]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 0]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 7]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 4]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 0]);
+
+    // front
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 0]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 3]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 1]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 3]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 2]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 1]);
+
+    // back
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 4]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 7]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 5]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 7]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 6]);
+    crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 5]);
+  }
+}
+
+void compute_t_rail_idx (glm::vec3* tTrianglePositions, glm::vec3* tPositions, int pointCnt, int splineIdx, bool left) {
+  int currCnt = 0;
+  double mult = left? (-0.05) : 0.05;
   for (int i=0; i<pointCnt-1; ++i) {
 
     glm::vec3 offset_curr = glm::vec3(splineBinormals[splineIdx][i].x * mult, splineBinormals[splineIdx][i].y * mult, splineBinormals[splineIdx][i].z * mult);
@@ -1002,7 +1119,7 @@ void compute_store_points_tangents (glm::vec3* pointPositions, int splineIdx, in
   splineTangents[splineIdx].push_back(tangent);
 }
 
-void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePositions, Point* points, int currNumCtrlPts, int splineIdx, Point& prev_1, Point& prev_2, Point& next_1, bool connect_prev, bool connect_next) {
+void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePositions, vector<Point>& crossbarPositions, Point* points, int currNumCtrlPts, int splineIdx, Point& prev_1, Point& prev_2, Point& next_1, bool connect_prev, bool connect_next) {
   int pointCnt = 0;
 
   if (connect_prev) {
@@ -1058,6 +1175,8 @@ void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePosi
   // add_square_rail_points(squarePositions, splineIdx, pointCnt);
   // Switch to t shaped rail
   add_t_rail_points(squarePositions, splineIdx, pointCnt);
+  // Add crossbars
+  add_cross_bar_points(crossbarPositions, splineIdx, pointCnt);
 }
 
 void initScene(int argc, char *argv[])
@@ -1120,34 +1239,32 @@ void initScene(int argc, char *argv[])
       uNumPoints += ((int)(1.0 / param_u_step));
     }
 
-    int squareIdxCnt = 24 * (uNumPoints - 1);
+    int crossbarIdxCnt = 36 * (uNumPoints - 1);
     int tIdxCnt = 60 * (uNumPoints - 1);
 
     cout << "uNum: " << uNumPoints << endl;
 
     glm::vec3* pointPositions = new glm::vec3[uNumPoints];
 
-    // TODO: change this to general positions
-    // Switch to square rail
-    glm::vec3* squarePositions = new glm::vec3[uNumPoints * 4];
-    // Switch to t shaped rail
+    // glm::vec3* crossbarPositions = new glm::vec3[uNumPoints * 4];
+    vector<Point> crossbarPositions;
+
     glm::vec3* tPositions = new glm::vec3[uNumPoints * 10];
 
-    glm::vec3* squareTrianglePositions = new glm::vec3[squareIdxCnt];
-    glm::vec3* tLeftTrianglePositions = new glm::vec3[tIdxCnt];
-    glm::vec3* tRightTrianglePositions = new glm::vec3[tIdxCnt];
+    // glm::vec3* squareTrianglePositions = new glm::vec3[squareIdxCnt];
+
     // unsigned int* squareIndex = new unsigned int[squareIdxCnt];
 
     // TODO: remove this.
     glm::vec4* pointColors = new glm::vec4[uNumPoints];
     // TODO: Change this to normal
-    glm::vec3* squareColors = new glm::vec3[squareIdxCnt];
+    // glm::vec3* squareColors = new glm::vec3[squareIdxCnt];
     glm::vec3* tColors = new glm::vec3[tIdxCnt];
     // Disable multiple curve connection
     // connect_prev = false;
     // connect_next = false;
     
-    compute_catmull_rom_point(pointPositions, tPositions, splines[i].points, currNumCtrlPts, i, prev_1_point, prev_2_point, next_1_point, connect_prev, connect_next);
+    compute_catmull_rom_point(pointPositions, tPositions, crossbarPositions, splines[i].points, currNumCtrlPts, i, prev_1_point, prev_2_point, next_1_point, connect_prev, connect_next);
 
     // Set colors for line track
     for (int j=0; j<uNumPoints; ++j) {
@@ -1155,18 +1272,18 @@ void initScene(int argc, char *argv[])
     }
     // TODO: remove this
     // Set colors for square track as normal
-    for (int j=0; j<uNumPoints-1; ++j) {
-      for (int k=0; k<6; ++k) {
-          // bottom right: right
-          squareColors[j*24+k] = glm::vec3(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z);
-          // top right: top
-          squareColors[j*24+1*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
-          // top left: left
-          squareColors[j*24+2*6+k] = glm::vec3(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z);
-          // bottom left: bottom
-          squareColors[j*24+3*6+k] = glm::vec3(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z);
-      }
-    }
+    // for (int j=0; j<uNumPoints-1; ++j) {
+    //   for (int k=0; k<6; ++k) {
+    //       // bottom right: right
+    //       squareColors[j*24+k] = glm::vec3(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z);
+    //       // top right: top
+    //       squareColors[j*24+1*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
+    //       // top left: left
+    //       squareColors[j*24+2*6+k] = glm::vec3(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z);
+    //       // bottom left: bottom
+    //       squareColors[j*24+3*6+k] = glm::vec3(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z);
+    //   }
+    // }
 
     // Compute vertex colors for t shaped rail
     for (int j=0; j<uNumPoints-1; ++j) {
@@ -1194,12 +1311,19 @@ void initScene(int argc, char *argv[])
       }
     }
 
+    glm::vec3* tLeftTrianglePositions = new glm::vec3[tIdxCnt];
+    glm::vec3* tRightTrianglePositions = new glm::vec3[tIdxCnt];
+    glm::vec3* crossbarTrianglePositions = new glm::vec3[crossbar_cnt * 18];
 
     // add triangle vertex for square track
     // compute_square_rail_idx(squareTrianglePositions, squareColors, squarePositions, uNumPoints, i);
     bool left = true;
-    compute_t_rail_idx(tLeftTrianglePositions, tColors, tPositions, uNumPoints, i, left);
-    compute_t_rail_idx(tRightTrianglePositions, tColors, tPositions, uNumPoints, i, !left);
+    compute_t_rail_idx(tLeftTrianglePositions, tPositions, uNumPoints, i, left);
+    compute_t_rail_idx(tRightTrianglePositions, tPositions, uNumPoints, i, !left);
+
+    // Compute indices for cross bar and load texture
+    compute_cross_bar_idx(crossbarTrianglePositions, crossbarPositions);
+    loadCrossbarTexture(crossbarTrianglePositions);
 
     // =================================================== Bind vertex VAO and VBO for left rail ===================================================
     // Set positions VBO
@@ -1289,9 +1413,8 @@ void initScene(int argc, char *argv[])
 
     delete [] pointColors;
     delete [] pointPositions;
-    delete [] squareColors;
-    delete [] squarePositions;
-    delete [] squareTrianglePositions;
+    // delete [] squareColors;
+    // delete [] squareTrianglePositions;
   }
   glEnable(GL_DEPTH_TEST);
 
