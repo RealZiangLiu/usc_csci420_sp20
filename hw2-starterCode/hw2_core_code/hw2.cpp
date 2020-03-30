@@ -41,7 +41,7 @@ using namespace std;
 // Constant parameters
 const double param_s = 0.5;
 const double param_u_step = 0.001;
-const int param_speed = 10;
+const int param_speed = 6;
 const double param_rail_scale = 0.05;
 const float param_La[4] = {0.8, 0.8, 1, 1.0};
 const float param_Ld[4] = {0.8, 0.8, 0.5, 1.0};
@@ -479,12 +479,12 @@ void displayFunc()
     matrix.SetMatrixMode(OpenGLMatrix::ModelView);
     matrix.LoadIdentity();
     int focusIdx = (roller_frame_count+1) % splineVertexCnt[0];
-    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.13 * splineNormals[0][roller_frame_count].x, 
-                  splinePointCoords[0][roller_frame_count].y + 0.13 * splineNormals[0][roller_frame_count].y,
-                  splinePointCoords[0][roller_frame_count].z + 0.13 * splineNormals[0][roller_frame_count].z, // eye point
-                  splinePointCoords[0][focusIdx].x + 0.13 * splineNormals[0][focusIdx].x, 
-                  splinePointCoords[0][focusIdx].y + 0.13 * splineNormals[0][focusIdx].y,
-                  splinePointCoords[0][focusIdx].z + 0.13 * splineNormals[0][focusIdx].z,          // focus point          
+    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.16 * splineNormals[0][roller_frame_count].x, 
+                  splinePointCoords[0][roller_frame_count].y + 0.16 * splineNormals[0][roller_frame_count].y,
+                  splinePointCoords[0][roller_frame_count].z + 0.16 * splineNormals[0][roller_frame_count].z, // eye point
+                  splinePointCoords[0][focusIdx].x + 0.16 * splineNormals[0][focusIdx].x, 
+                  splinePointCoords[0][focusIdx].y + 0.16 * splineNormals[0][focusIdx].y,
+                  splinePointCoords[0][focusIdx].z + 0.16 * splineNormals[0][focusIdx].z,          // focus point          
                   splineNormals[0][roller_frame_count].x,
                   splineNormals[0][roller_frame_count].y,
                   splineNormals[0][roller_frame_count].z);
@@ -783,11 +783,18 @@ void keyboardFunc(unsigned char key, int x, int y)
 
 void renderSplines () {
   for (size_t i=0; i<numSplines; ++i) {
-    glBindVertexArray(splineVAOs[i]);
+    // draw left
+    glBindVertexArray(splineVAOs[i*2]);
     // glDrawArrays(GL_LINE_STRIP, 0, splineVertexCnt[i]);
-    glDrawArrays(GL_TRIANGLES, 0, splineSquareEBOCnt[i]);
+    glDrawArrays(GL_TRIANGLES, 0, splineSquareEBOCnt[i*2]);
     // glDrawElements(GL_TRIANGLES, splineSquareEBOCnt[i], GL_UNSIGNED_INT, (void*)0);
     glBindVertexArray(0);
+
+    // draw right
+    glBindVertexArray(splineVAOs[i*2+1]);
+    glDrawArrays(GL_TRIANGLES, 0, splineSquareEBOCnt[i*2+1]);
+    glBindVertexArray(0);
+
   }
 }
 
@@ -819,12 +826,12 @@ void add_square_rail_points (glm::vec3* squarePositions, int splineIdx, int poin
 
 void add_t_rail_points (glm::vec3* tPositions, int splineIdx, int pointCnt) {
   int tPointCnt = 0;
-  double ho_1 = 0.025;
-  double ho_2 = 0.006;
-  double ho_3 = 0.04;
-  double ve_1 = 0.023;
-  double ve_2 = 0.04;
-  double ve_3 = 0.035;
+  double ho_1 = 0.01875;
+  double ho_2 = 0.0045;
+  double ho_3 = 0.03;
+  double ve_1 = 0.016;
+  double ve_2 = 0.03;
+  double ve_3 = 0.02625;
   for (int i=0; i<pointCnt; ++i) {
     Point p_0 = splinePointCoords[splineIdx][i];
     Point n_0 = splineNormals[splineIdx][i];
@@ -893,88 +900,92 @@ void compute_square_rail_idx (glm::vec3* squareTrianglePositions, glm::vec3* squ
   cout << "In idx: " << currCnt << endl;
 }
 
-void compute_t_rail_idx (glm::vec3* tTrianglePositions, glm::vec3* tColors, glm::vec3* tPositions, int pointCnt, int splineIdx) {
+void compute_t_rail_idx (glm::vec3* tTrianglePositions, glm::vec3* tColors, glm::vec3* tPositions, int pointCnt, int splineIdx, bool left) {
   int currCnt = 0;
+  double mult = left? (-0.15) : 0.15;
   for (int i=0; i<pointCnt-1; ++i) {
+
+    glm::vec3 offset_curr = glm::vec3(splineBinormals[splineIdx][i].x * mult, splineBinormals[splineIdx][i].y * mult, splineBinormals[splineIdx][i].z * mult);
+    glm::vec3 offset_next = glm::vec3(splineBinormals[splineIdx][i+1].x * mult, splineBinormals[splineIdx][i+1].y * mult, splineBinormals[splineIdx][i+1].z * mult);
     // top
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 0];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 10];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 1];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 10];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 11];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 1];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 0] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 10] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 1] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 10] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 11] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 1] + offset_curr;
 
     // top left
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 2];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 12];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 0];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 12];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 10];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 0];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 2] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 12] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 0] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 12] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 10] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 0] + offset_curr;
 
     // top bottom left
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 2];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 12];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 14];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 2];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 4];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 14];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 2] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 12] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 14] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 2] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 4] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 14] + offset_next;
 
     // left
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 4];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 14];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 16];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 4];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 6];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 16];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 4] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 14] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 16] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 4] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 6] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 16] + offset_next;
 
     // bottom top left
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 6];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 8];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 18];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 6];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 16];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 18];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 6] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 8] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 18] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 6] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 16] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 18] + offset_next;
 
     // bottom
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 8];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 9];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 19];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 8];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 18];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 19];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 8] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 9] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 19] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 8] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 18] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 19] + offset_next;
 
     // bottom top right
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 7];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 9];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 19];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 7];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 17];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 19];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 7] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 9] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 19] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 7] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 17] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 19] + offset_next;
 
     // right
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 5];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 7];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 17];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 5];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 15];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 17];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 5] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 7] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 17] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 5] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 15] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 17] + offset_next;
 
     // top bottom right
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 5];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 3];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 13];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 5];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 15];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 13];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 5] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 3] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 13] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 5] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 15] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 13] + offset_next;
 
     // top right
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 1];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 3];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 13];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 1];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 11];
-    tTrianglePositions[currCnt++] = tPositions[i * 10 + 13];
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 1] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 3] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 13] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 1] + offset_curr;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 11] + offset_next;
+    tTrianglePositions[currCnt++] = tPositions[i * 10 + 13] + offset_next;
   }
 }
 
@@ -1077,7 +1088,7 @@ void initScene(int argc, char *argv[])
   Point next_1_point;
 
   // Intialize global coord and tangent vectors
-  splinePointCoords.resize(numSplines);
+  splinePointCoords.resize(numSplines); // mult by 2 for two rails
   splineTangents.resize(numSplines);
   splineNormals.resize(numSplines);
   splineBinormals.resize(numSplines);
@@ -1089,7 +1100,7 @@ void initScene(int argc, char *argv[])
     // currNumCtrlPts - 3 segments, +1 for endpoint
     int uNumPoints = ((int)(1.0 / param_u_step)) * (currNumCtrlPts - 3) + 1;
 
-    GLuint currVBO, currVAO;
+    GLuint currLeftVBO, currRightVBO, currLeftVAO, currRightVAO;
     GLuint currEBO;
 
     bool connect_prev = false;
@@ -1123,7 +1134,8 @@ void initScene(int argc, char *argv[])
     glm::vec3* tPositions = new glm::vec3[uNumPoints * 10];
 
     glm::vec3* squareTrianglePositions = new glm::vec3[squareIdxCnt];
-    glm::vec3* tTrianglePositions = new glm::vec3[tIdxCnt];
+    glm::vec3* tLeftTrianglePositions = new glm::vec3[tIdxCnt];
+    glm::vec3* tRightTrianglePositions = new glm::vec3[tIdxCnt];
     // unsigned int* squareIndex = new unsigned int[squareIdxCnt];
 
     // TODO: remove this.
@@ -1156,6 +1168,7 @@ void initScene(int argc, char *argv[])
       }
     }
 
+    // Compute vertex colors for t shaped rail
     for (int j=0; j<uNumPoints-1; ++j) {
       for (int k=0; k<6; ++k) {
           // top
@@ -1184,27 +1197,29 @@ void initScene(int argc, char *argv[])
 
     // add triangle vertex for square track
     // compute_square_rail_idx(squareTrianglePositions, squareColors, squarePositions, uNumPoints, i);
-    compute_t_rail_idx(tTrianglePositions, tColors, tPositions, uNumPoints, i);
+    bool left = true;
+    compute_t_rail_idx(tLeftTrianglePositions, tColors, tPositions, uNumPoints, i, left);
+    compute_t_rail_idx(tRightTrianglePositions, tColors, tPositions, uNumPoints, i, !left);
 
-    // =================================================== Bind vertex VAO and VBO ===================================================
+    // =================================================== Bind vertex VAO and VBO for left rail ===================================================
     // Set positions VBO
-    glGenBuffers(1, &currVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, currVBO);
+    glGenBuffers(1, &currLeftVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, currLeftVBO);
 
     // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints + sizeof(glm::vec4) * uNumPoints, nullptr, GL_STATIC_DRAW);
     glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt + sizeof(glm::vec3) * tIdxCnt, nullptr, GL_STATIC_DRAW);
     // Upload position data
     // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * uNumPoints, pointPositions);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * tIdxCnt, tTrianglePositions);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * tIdxCnt, tLeftTrianglePositions);
     // Upload color data
     // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints, sizeof(glm::vec4) * uNumPoints, pointColors);
     glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt, sizeof(glm::vec3) * tIdxCnt, tColors);
 
-    glGenVertexArrays(1, &currVAO);
-    glBindVertexArray(currVAO);
+    glGenVertexArrays(1, &currLeftVAO);
+    glBindVertexArray(currLeftVAO);
 
     // Bind pointVBO
-    glBindBuffer(GL_ARRAY_BUFFER, currVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, currLeftVBO);
     // Set "position" layout
     GLuint loc = glGetAttribLocation(milestonePipelineProgram->GetProgramHandle(), "position");
     glEnableVertexAttribArray(loc); 
@@ -1224,8 +1239,51 @@ void initScene(int argc, char *argv[])
 
     // =================================================== End vertex VAO/VBO Binding ===================================================
 
-    splineVBOs.push_back(currVBO);
-    splineVAOs.push_back(currVAO);
+    // =================================================== Bind vertex VAO and VBO for right rail ===================================================
+    // Set positions VBO
+    glGenBuffers(1, &currRightVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, currRightVBO);
+
+    // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints + sizeof(glm::vec4) * uNumPoints, nullptr, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt + sizeof(glm::vec3) * tIdxCnt, nullptr, GL_STATIC_DRAW);
+    // Upload position data
+    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * uNumPoints, pointPositions);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * tIdxCnt, tRightTrianglePositions);
+    // Upload color data
+    // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints, sizeof(glm::vec4) * uNumPoints, pointColors);
+    glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt, sizeof(glm::vec3) * tIdxCnt, tColors);
+
+    glGenVertexArrays(1, &currRightVAO);
+    glBindVertexArray(currRightVAO);
+
+    // Bind pointVBO
+    glBindBuffer(GL_ARRAY_BUFFER, currRightVBO);
+    // Set "position" layout
+    loc = glGetAttribLocation(milestonePipelineProgram->GetProgramHandle(), "position");
+    glEnableVertexAttribArray(loc); 
+    offset = (const void*) 0;
+    stride = 0;
+    glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+    // Set "color" layout
+    loc = glGetAttribLocation(milestonePipelineProgram->GetProgramHandle(), "normal");
+    glEnableVertexAttribArray(loc);
+    // offset = (const void*) sizeof(pointPositions);
+    // offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
+    offset = (const void*) (sizeof(glm::vec3) * tIdxCnt);
+    glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+
+    glBindVertexArray(0); // Unbind the VAO
+    glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+
+    // =================================================== End vertex VAO/VBO Binding ===================================================
+
+    splineVBOs.push_back(currLeftVBO);
+    splineVAOs.push_back(currLeftVAO);
+    splineVertexCnt.push_back(uNumPoints);
+    splineSquareEBOCnt.push_back(60 * (uNumPoints - 1));
+
+    splineVBOs.push_back(currRightVBO);
+    splineVAOs.push_back(currRightVAO);
     splineVertexCnt.push_back(uNumPoints);
     splineSquareEBOCnt.push_back(60 * (uNumPoints - 1));
 
