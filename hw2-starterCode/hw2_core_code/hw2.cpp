@@ -47,7 +47,7 @@ const float param_La[4] = {0.8, 0.8, 1, 1.0};
 const float param_Ld[4] = {0.8, 0.8, 0.5, 1.0};
 const float param_Ls[4] = {1, 0.9, 0.8, 1.0};
 const float param_alpha = 51.2;
-const float param_ka[4] = {0.24725, 0.1995, 0.0745, 1.0};
+const float param_ka[4] = {0.70, 0.5, 0.2, 1.0};
 const float param_kd[4] = {0.75164, 0.60648, 0.22648, 1.0};
 const float param_ks[4] = {0.628281, 0.555802, 0.366065, 1.0};
 
@@ -212,8 +212,9 @@ int roller_frame_count = 0;
 // Global arrays
 GLuint groundVBO, groundVAO;
 GLuint crossbarVBO, crossbarVAO;
+GLuint skyVBO, skyVAO;
 // texture handles
-GLuint groundHandle, crossbarHandle;
+GLuint groundHandle, crossbarHandle, skyHandle;
 
 vector<GLuint> splineVBOs;
 vector<GLuint> splineVAOs;
@@ -234,6 +235,7 @@ int crossbar_cnt = 0;
 void renderSplines();
 void renderGroundTexture();
 void renderCrossbarTexture();
+void renderSkyTexture();
 
 int loadSplines(char * argv) 
 {
@@ -379,12 +381,12 @@ void loadGroundTexture () {
   glm::vec2* groundTexCoords = new glm::vec2[6];
 
   // Populate positions array
-  groundPositions[0] = glm::vec3(100, -10, 100);
-  groundPositions[1] = glm::vec3(100, -10, -100);
-  groundPositions[2] = glm::vec3(-100, -10, -100);
-  groundPositions[3] = glm::vec3(100, -10, 100);
-  groundPositions[4] = glm::vec3(-100, -10, 100);
-  groundPositions[5] = glm::vec3(-100, -10, -100);
+  groundPositions[0] = glm::vec3(500, -10, 500);
+  groundPositions[1] = glm::vec3(500, -10, -500);
+  groundPositions[2] = glm::vec3(-500, -10, -500);
+  groundPositions[3] = glm::vec3(500, -10, 500);
+  groundPositions[4] = glm::vec3(-500, -10, 500);
+  groundPositions[5] = glm::vec3(-500, -10, -500);
 
   groundTexCoords[0] = glm::vec2(1, 0);
   groundTexCoords[1] = glm::vec2(1, 1);
@@ -485,6 +487,101 @@ void loadCrossbarTexture (glm::vec3* crossbarTrianglePositions) {
   // ======================== End texture VAO/VBO Binding ===========================
 }
 
+void loadSkyTexture () {
+  cout << "LOADING SKY TEXTURE" << endl;
+  glGenTextures(1, &skyHandle);
+
+  int code = initTexture("texture_sky_0.jpg", skyHandle);
+  if (code != 0) {
+    printf("Error loading the texture image.\n");
+    exit(EXIT_FAILURE); 
+  }
+  glm::vec3* skyPositions = new glm::vec3[30];
+  glm::vec2* skyTexCoords = new glm::vec2[30];
+
+  // Populate positions array
+  int pos_cnt = 0;
+  // Top
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, 500);
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, -500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, 990, -500);
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, 500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, 990, 500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, 990, -500);
+
+  // Left
+  skyPositions[pos_cnt++] = glm::vec3(-500, -10, 500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, -10, -500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, 990, -500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, -10, 500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, 990, 500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, 990, -500);
+
+  // Right
+  skyPositions[pos_cnt++] = glm::vec3(500, -10, 500);
+  skyPositions[pos_cnt++] = glm::vec3(500, -10, -500);
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, -500);
+  skyPositions[pos_cnt++] = glm::vec3(500, -10, 500);
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, 500);
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, -500);
+
+  // Front
+  skyPositions[pos_cnt++] = glm::vec3(-500, -10, 500);
+  skyPositions[pos_cnt++] = glm::vec3(500, -10, 500);
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, 500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, -10, 500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, 990, 500);
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, 500);
+
+  // Back
+  skyPositions[pos_cnt++] = glm::vec3(-500, -10, -500);
+  skyPositions[pos_cnt++] = glm::vec3(500, -10, -500);
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, -500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, -10, -500);
+  skyPositions[pos_cnt++] = glm::vec3(-500, 990, -500);
+  skyPositions[pos_cnt++] = glm::vec3(500, 990, -500);
+
+  for (int i=0; i<5; ++i) {
+    skyTexCoords[i * 6 + 0] = glm::vec2(1, 0);
+    skyTexCoords[i * 6 + 1] = glm::vec2(1, 1);
+    skyTexCoords[i * 6 + 2] = glm::vec2(0, 1);
+    skyTexCoords[i * 6 + 3] = glm::vec2(1, 0);
+    skyTexCoords[i * 6 + 4] = glm::vec2(0, 0);
+    skyTexCoords[i * 6 + 5] = glm::vec2(0, 1);
+  }
+  // ============================= Bind texture VAO and VBO ========================
+  // Set positions VBO
+  glGenBuffers(1, &skyVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, skyVBO);
+  
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * 30 + sizeof(glm::vec2) * 30, nullptr, GL_STATIC_DRAW);
+  // Upload position data
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * 30, skyPositions);
+  // Upload texCoord data
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * 30, sizeof(glm::vec2) * 30, skyTexCoords);
+  // Set VAO
+  glGenVertexArrays(1, &skyVAO);
+  glBindVertexArray(skyVAO);
+  // Bind vbo
+  glBindBuffer(GL_ARRAY_BUFFER, skyVBO);
+  // Set "position" layout
+  GLuint loc = glGetAttribLocation(texturePipelineProgram->GetProgramHandle(), "position");
+  glEnableVertexAttribArray(loc); 
+  const void * offset = (const void*) 0;
+  GLsizei stride = 0;
+  glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
+  // Set "texCoord" layout
+  loc = glGetAttribLocation(texturePipelineProgram->GetProgramHandle(), "texCoord");
+  glEnableVertexAttribArray(loc);
+  // offset = (const void*) sizeof(pointPositions);
+  // offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
+  offset = (const void*) (sizeof(glm::vec3) * 30);
+  glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, stride, offset);
+
+  glBindVertexArray(0); // Unbind the VAO
+  glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+  // ======================== End texture VAO/VBO Binding ===========================
+}
 // write a screenshot to the specified filename
 void saveScreenshot(const char * filename)
 {
@@ -680,6 +777,10 @@ void displayFunc()
   glBindTexture(GL_TEXTURE_2D, crossbarHandle); 
   renderCrossbarTexture();
   glBindTexture(GL_TEXTURE_2D, 0); 
+
+  glBindTexture(GL_TEXTURE_2D, skyHandle); 
+  renderSkyTexture();
+  glBindTexture(GL_TEXTURE_2D, 0); 
   
 
   glutSwapBuffers();
@@ -712,7 +813,7 @@ void reshapeFunc(int w, int h)
   glViewport(0, 0, w, h);
   matrix.SetMatrixMode(OpenGLMatrix::Projection);
   matrix.LoadIdentity();
-  matrix.Perspective(54.0f, (float)w / (float)h, 0.01f, 100.0f);
+  matrix.Perspective(54.0f, (float)w / (float)h, 0.01f, 1500.0f);
   matrix.SetMatrixMode(OpenGLMatrix::ModelView);
 }
 
@@ -893,6 +994,12 @@ void renderCrossbarTexture () {
   glBindVertexArray(0);
 }
 
+void renderSkyTexture () {
+  glBindVertexArray(skyVAO);
+  glDrawArrays(GL_TRIANGLES, 0, 30);
+  glBindVertexArray(0);
+}
+
 void add_cross_bar_points (vector<Point>& crossbarPositions, int splineIdx, int pointCnt) {
   int crossBarPointCnt = 0;
   for (int i=crossbar_dist / 2 + crossbar_width; i<pointCnt; i+=crossbar_dist) {
@@ -941,8 +1048,8 @@ void add_t_rail_points (glm::vec3* tPositions, int splineIdx, int pointCnt) {
     Point v_0, v_1, v_2, v_3, v_4, v_5, v_6, v_7, v_8, v_9;
     v_0 = p_0 + n_0 * ve_2 - b_0 * ho_1;
     v_1 = p_0 + n_0 * ve_2 + b_0 * ho_1;
-    v_2 = p_0 + n_0 * ve_1 - b_0 * ho_1;
-    v_3 = p_0 + n_0 * ve_1 + b_0 * ho_1;
+    v_2 = p_0 + n_0 * ve_1 - b_0 * ho_1 * 1.4;
+    v_3 = p_0 + n_0 * ve_1 + b_0 * ho_1 * 1.4;
     v_4 = p_0 + n_0 * ve_1 - b_0 * ho_2;
     v_5 = p_0 + n_0 * ve_1 + b_0 * ho_2;
     v_6 = p_0 - n_0 * ve_1 - b_0 * ho_2;
@@ -1201,6 +1308,9 @@ void initScene(int argc, char *argv[])
 
   // Load ground texture
   loadGroundTexture();
+
+  // Load sky texture
+  loadSkyTexture();
 
   Point prev_1_point;
   Point prev_2_point;
