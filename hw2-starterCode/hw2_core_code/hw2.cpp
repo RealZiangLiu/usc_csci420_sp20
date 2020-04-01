@@ -51,22 +51,23 @@ const float param_ka[4] = {0.70, 0.5, 0.2, 1.0};
 const float param_kd[4] = {0.75164, 0.60648, 0.22648, 1.0};
 const float param_ks[4] = {0.628281, 0.555802, 0.366065, 1.0};
 
-const int crossbar_dist = 30;
-const int crossbar_width = 8;
+const int crossbar_dist = 25;
+const int crossbar_width = 6;
 
-const double bar_l = 1.8;
-const double bar_h = 0.08;
+const double bar_l = 1.2;
+const double bar_h = 0.04;
 
-const double ho_1 = 0.00625;
-const double ho_2 = 0.0013;
-const double ho_3 = 0.01;
-const double ve_1 = 0.005333;
-const double ve_2 = 0.01;
-const double ve_3 = 0.00875;
+const double ho_1 = 0.003125;
+const double ho_2 = 0.00065;
+const double ho_3 = 0.007;
+const double ve_1 = 0.0026665;
+const double ve_2 = 0.005;
+const double ve_3 = 0.004375;
 
 // the “Sun” at noon
 const float lightDirection[3] = { -1, 0, 0 };
 
+bool close_loop = true;
 
 // represents one control point along the spline 
 struct Point 
@@ -109,6 +110,10 @@ struct Point
   Point cross (Point& other) {
     Point res(y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x);
     return res;
+  }
+
+  double dist (Point& other) {
+    return sqrt((x-other.x)*(x-other.x) + (y-other.y)*(y-other.y) + (z-other.z)*(z-other.z));
   }
 };
 
@@ -206,20 +211,24 @@ char windowTitle[512] = "CSCI 420 homework II";
 int mode = 1;
 int record_animation = 0;
 int camera_on_rail = 0;
+int run_roller = 1;
 
 int roller_frame_count = 0;
+int curr_spline_id = 0;
 
 // Global arrays
 GLuint groundVBO, groundVAO;
-GLuint crossbarVBO, crossbarVAO;
 GLuint skyVBO, skyVAO;
 // texture handles
 GLuint groundHandle, crossbarHandle, skyHandle;
 
 vector<GLuint> splineVBOs;
 vector<GLuint> splineVAOs;
+vector<GLuint> crossbarVBOs;
+vector<GLuint> crossbarVAOs;
 vector<int> splineVertexCnt;
 vector<int> splineSquareEBOCnt;
+vector<int> crossbar_cnt;
 
 // store point positions along spline
 vector< vector<Point> > splinePointCoords, splineTangents, splineNormals, splineBinormals;
@@ -228,8 +237,6 @@ OpenGLMatrix matrix;
 BasicPipelineProgram * milestonePipelineProgram, *texturePipelineProgram;
 
 int frame_cnt = 0;
-
-int crossbar_cnt = 0;
 
 // void renderWireframe();
 void renderSplines();
@@ -428,7 +435,8 @@ void loadGroundTexture () {
   // ======================== End texture VAO/VBO Binding ===========================
 }
 
-void loadCrossbarTexture (glm::vec3* crossbarTrianglePositions) {
+void loadCrossbarTexture (glm::vec3* crossbarTrianglePositions, int splineIdx) {
+  GLuint currVBO, currVAO;
   // TODO
   glGenTextures(1, &crossbarHandle);
 
@@ -438,12 +446,12 @@ void loadCrossbarTexture (glm::vec3* crossbarTrianglePositions) {
     exit(EXIT_FAILURE); 
   }
 
-  int crossbar_vertex_cnt = crossbar_cnt * 18;
+  int crossbar_vertex_cnt = crossbar_cnt[splineIdx] * 18;
 
   glm::vec2* crossbarTexCoords = new glm::vec2[crossbar_vertex_cnt];
 
   // Populate positions array
-  for (int i=0; i<crossbar_cnt; i+=2) {
+  for (int i=0; i<crossbar_cnt[splineIdx]; i+=2) {
     for (int j=0; j<6; ++j) {
       crossbarTexCoords[i * 18 + j * 6] = glm::vec2(1, 0);
       crossbarTexCoords[i * 18 + j * 6 + 1] = glm::vec2(1, 1);
@@ -455,8 +463,8 @@ void loadCrossbarTexture (glm::vec3* crossbarTrianglePositions) {
   }
   // ============================= Bind texture VAO and VBO ========================
   // Set positions VBO
-  glGenBuffers(1, &crossbarVBO);
-  glBindBuffer(GL_ARRAY_BUFFER, crossbarVBO);
+  glGenBuffers(1, &currVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, currVBO);
   
   glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * crossbar_vertex_cnt + sizeof(glm::vec2) * crossbar_vertex_cnt, nullptr, GL_STATIC_DRAW);
   // Upload position data
@@ -464,10 +472,10 @@ void loadCrossbarTexture (glm::vec3* crossbarTrianglePositions) {
   // Upload texCoord data
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * crossbar_vertex_cnt, sizeof(glm::vec2) * crossbar_vertex_cnt, crossbarTexCoords);
   // Set VAO
-  glGenVertexArrays(1, &crossbarVAO);
-  glBindVertexArray(crossbarVAO);
+  glGenVertexArrays(1, &currVAO);
+  glBindVertexArray(currVAO);
   // Bind vbo
-  glBindBuffer(GL_ARRAY_BUFFER, crossbarVBO);
+  glBindBuffer(GL_ARRAY_BUFFER, currVBO);
   // Set "position" layout
   GLuint loc = glGetAttribLocation(texturePipelineProgram->GetProgramHandle(), "position");
   glEnableVertexAttribArray(loc); 
@@ -484,6 +492,9 @@ void loadCrossbarTexture (glm::vec3* crossbarTrianglePositions) {
 
   glBindVertexArray(0); // Unbind the VAO
   glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+
+  crossbarVBOs.push_back(currVBO);
+  crossbarVAOs.push_back(currVAO);
   // ======================== End texture VAO/VBO Binding ===========================
 }
 
@@ -655,12 +666,15 @@ void displayFunc()
     matrix.SetMatrixMode(OpenGLMatrix::ModelView);
     matrix.LoadIdentity();
     int focusIdx = (roller_frame_count+1) % splineVertexCnt[0];
-    matrix.LookAt(splinePointCoords[0][roller_frame_count].x + 0.08 * splineNormals[0][roller_frame_count].x, 
-                  splinePointCoords[0][roller_frame_count].y + 0.08 * splineNormals[0][roller_frame_count].y,
-                  splinePointCoords[0][roller_frame_count].z + 0.08 * splineNormals[0][roller_frame_count].z, // eye point
-                  splinePointCoords[0][focusIdx].x + 0.08 * splineNormals[0][focusIdx].x, 
-                  splinePointCoords[0][focusIdx].y + 0.08 * splineNormals[0][focusIdx].y,
-                  splinePointCoords[0][focusIdx].z + 0.08 * splineNormals[0][focusIdx].z,          // focus point          
+    // Skechy fix for focus point collision at sharp turns
+    Point eye_point = splinePointCoords[0][roller_frame_count] + splineNormals[0][roller_frame_count] * 0.02;
+    Point focus_point = splinePointCoords[0][focusIdx] + splineNormals[0][focusIdx] * 0.02;
+    matrix.LookAt(eye_point.x, 
+                  eye_point.y,
+                  eye_point.z, // eye point
+                  focus_point.x, 
+                  focus_point.y,
+                  focus_point.z,          // focus point          
                   splineNormals[0][roller_frame_count].x,
                   splineNormals[0][roller_frame_count].y,
                   splineNormals[0][roller_frame_count].z);
@@ -675,7 +689,9 @@ void displayFunc()
     matrix.GetMatrix(p);
   }
   // ++roller_frame_count;
-  roller_frame_count += param_speed;
+  if (run_roller) {
+    roller_frame_count += param_speed;
+  }
 
   // DEBUG print
   // cout << "Coord: " << splinePointCoords[0][roller_frame_count].x << " " << splinePointCoords[0][roller_frame_count].y << " " << splinePointCoords[0][roller_frame_count].z << endl;
@@ -954,7 +970,7 @@ void keyboardFunc(unsigned char key, int x, int y)
     break;
 
     case 'r':
-      // Run the roller coaster
+      // Switch to roller coaster view
       camera_on_rail = 1 - camera_on_rail;
       if (camera_on_rail) {
         cout << "Placing camera on rail. Press 'r' again to change." << endl;
@@ -962,6 +978,10 @@ void keyboardFunc(unsigned char key, int x, int y)
         cout << "Camera free move mode. Press 'r' again to change." << endl;
       }
     break;
+
+    case 'p':
+      // run or pause roller coaster
+      run_roller = 1 - run_roller;
   }
 }
 
@@ -989,9 +1009,11 @@ void renderGroundTexture () {
 }
 
 void renderCrossbarTexture () {
-  glBindVertexArray(crossbarVAO);
-  glDrawArrays(GL_TRIANGLES, 0, crossbar_cnt * 18);
-  glBindVertexArray(0);
+  for (size_t i=0; i<numSplines; ++i) {
+    glBindVertexArray(crossbarVAOs[i]);
+    glDrawArrays(GL_TRIANGLES, 0, crossbar_cnt[i] * 18);
+    glBindVertexArray(0);
+  }
 }
 
 void renderSkyTexture () {
@@ -1002,6 +1024,7 @@ void renderSkyTexture () {
 
 void add_cross_bar_points (vector<Point>& crossbarPositions, int splineIdx, int pointCnt) {
   int crossBarPointCnt = 0;
+  crossbar_cnt.push_back(0);
   for (int i=crossbar_dist / 2 + crossbar_width; i<pointCnt; i+=crossbar_dist) {
     Point p_0_0 = splinePointCoords[splineIdx][i - crossbar_width];
     Point n_0_0 = splineNormals[splineIdx][i - crossbar_width];
@@ -1034,7 +1057,7 @@ void add_cross_bar_points (vector<Point>& crossbarPositions, int splineIdx, int 
     crossbarPositions.push_back(Point(v_6.x, v_6.y, v_6.z) + offset_1);
     crossbarPositions.push_back(Point(v_7.x, v_7.y, v_7.z) + offset_1);
 
-    crossbar_cnt += 2;
+    crossbar_cnt[splineIdx] += 2;
   }
 }
 
@@ -1067,6 +1090,17 @@ void add_t_rail_points (glm::vec3* tPositions, int splineIdx, int pointCnt) {
     tPositions[tPointCnt++] = glm::vec3(v_7.x, v_7.y, v_7.z);
     tPositions[tPointCnt++] = glm::vec3(v_8.x, v_8.y, v_8.z);
     tPositions[tPointCnt++] = glm::vec3(v_9.x, v_9.y, v_9.z);
+
+    // compute factor for normal of slope
+    // Point test_3 = p_0 + n_0 * ve_1 + b_0 * ho_1;
+    // double dist_ho = v_3.dist(test_3);
+    // double dist_ve = v_1.dist(test_3);
+    // cout << "ratio: " << dist_ho / dist_ve << endl;
+
+    // Point test_6 = p_0 - n_0 * ve_3 - b_0 * ho_2;
+    // double dist_ho_1 = v_8.dist(test_6);
+    // double dist_ve_1 = v_6.dist(test_6);
+    // cout << "ratio bottom: " << dist_ve_1 / dist_ho_1 << endl;
   }
 }
 
@@ -1074,9 +1108,9 @@ glm::vec3 point_to_vec3 (const Point& pt) {
   return glm::vec3(pt.x, pt.y, pt.z);
 }
 
-void compute_cross_bar_idx (glm::vec3* crossbarTrianglePositions, const vector<Point>& crossbarPositions) {
+void compute_cross_bar_idx (glm::vec3* crossbarTrianglePositions, const vector<Point>& crossbarPositions, int splineIdx) {
   int currCnt = 0;
-  for (int i=0; i<crossbar_cnt; i+=2) {
+  for (int i=0; i<crossbar_cnt[splineIdx]; i+=2) {
     // right
     crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 0]);
     crossbarTrianglePositions[currCnt++] = point_to_vec3(crossbarPositions[i * 4 + 4]);
@@ -1126,7 +1160,7 @@ void compute_cross_bar_idx (glm::vec3* crossbarTrianglePositions, const vector<P
 
 void compute_t_rail_idx (glm::vec3* tTrianglePositions, glm::vec3* tPositions, int pointCnt, int splineIdx, bool left) {
   int currCnt = 0;
-  double mult = left? (-0.05) : 0.05;
+  double mult = left? (-0.03) : 0.03;
   for (int i=0; i<pointCnt-1; ++i) {
 
     glm::vec3 offset_curr = glm::vec3(splineBinormals[splineIdx][i].x * mult, splineBinormals[splineIdx][i].y * mult, splineBinormals[splineIdx][i].z * mult);
@@ -1395,35 +1429,51 @@ void initScene(int argc, char *argv[])
     //   }
     // }
 
+    double top_slope_ratio = 0.535676;
+    double bottom_slope_ratio = 0.269055;
     // Compute vertex colors for t shaped rail
     for (int j=0; j<uNumPoints-1; ++j) {
       for (int k=0; k<6; ++k) {
           // top
           tColors[j*60+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
-          // top left
-          tColors[j*60+1*6+k] = glm::vec3(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z);
+          // top left // TODO: change to slope normal
+          // tColors[j*60+1*6+k] = glm::vec3(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z);
+          Point top_left_normal = splineNormals[i][j] * top_slope_ratio - splineBinormals[i][j];
+          tColors[j*60+1*6+k] = glm::vec3(top_left_normal.x, top_left_normal.y, top_left_normal.z);
+
           // top bottom left
           tColors[j*60+2*6+k] = glm::vec3(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z);
           // left
           tColors[j*60+3*6+k] = glm::vec3(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z);
+
           // bottom top left // TODO: change this to slope normal
-          tColors[j*60+4*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
+          // tColors[j*60+4*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
+          Point bottom_left_normal = splineNormals[i][j] - splineBinormals[i][j] * bottom_slope_ratio;
+          tColors[j*60+4*6+k] = glm::vec3(bottom_left_normal.x, bottom_left_normal.y, bottom_left_normal.z);
+
           // bottom
           tColors[j*60+5*6+k] = glm::vec3(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z);
+
           // bottom top right // TODO: change this to slope normal
-          tColors[j*60+6*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
+          // tColors[j*60+6*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
+          Point bottom_right_normal = splineNormals[i][j] + splineBinormals[i][j] * bottom_slope_ratio;
+          tColors[j*60+6*6+k] = glm::vec3(bottom_right_normal.x, bottom_right_normal.y, bottom_right_normal.z);
+
           // right
           tColors[j*60+7*6+k] = glm::vec3(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z);
           // top bottom right
           tColors[j*60+8*6+k] = glm::vec3(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z);
+
           // top right
-          tColors[j*60+9*6+k] = glm::vec3(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z);
+          // tColors[j*60+9*6+k] = glm::vec3(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z);
+          Point top_right_normal = splineNormals[i][j] * top_slope_ratio + splineBinormals[i][j];
+          tColors[j*60+9*6+k] = glm::vec3(top_right_normal.x, top_right_normal.y, top_right_normal.z);
       }
     }
 
     glm::vec3* tLeftTrianglePositions = new glm::vec3[tIdxCnt];
     glm::vec3* tRightTrianglePositions = new glm::vec3[tIdxCnt];
-    glm::vec3* crossbarTrianglePositions = new glm::vec3[crossbar_cnt * 18];
+    glm::vec3* crossbarTrianglePositions = new glm::vec3[crossbar_cnt[i] * 18];
 
     // add triangle vertex for square track
     // compute_square_rail_idx(squareTrianglePositions, squareColors, squarePositions, uNumPoints, i);
@@ -1432,8 +1482,8 @@ void initScene(int argc, char *argv[])
     compute_t_rail_idx(tRightTrianglePositions, tPositions, uNumPoints, i, !left);
 
     // Compute indices for cross bar and load texture
-    compute_cross_bar_idx(crossbarTrianglePositions, crossbarPositions);
-    loadCrossbarTexture(crossbarTrianglePositions);
+    compute_cross_bar_idx(crossbarTrianglePositions, crossbarPositions, i);
+    loadCrossbarTexture(crossbarTrianglePositions, i);
 
     // =================================================== Bind vertex VAO and VBO for left rail ===================================================
     // Set positions VBO
