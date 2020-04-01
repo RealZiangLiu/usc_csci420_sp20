@@ -437,7 +437,6 @@ void loadGroundTexture () {
 
 void loadCrossbarTexture (glm::vec3* crossbarTrianglePositions, int splineIdx) {
   GLuint currVBO, currVAO;
-  // TODO
   glGenTextures(1, &crossbarHandle);
 
   int code = initTexture("texture_darkWood.jpg", crossbarHandle);
@@ -1399,8 +1398,6 @@ void initScene(int argc, char *argv[])
 
     // unsigned int* squareIndex = new unsigned int[squareIdxCnt];
 
-    // TODO: remove this.
-    glm::vec4* pointColors = new glm::vec4[uNumPoints];
     // TODO: Change this to normal
     // glm::vec3* squareColors = new glm::vec3[squareIdxCnt];
     glm::vec3* tColors = new glm::vec3[tIdxCnt];
@@ -1410,10 +1407,6 @@ void initScene(int argc, char *argv[])
     
     compute_catmull_rom_point(pointPositions, tPositions, crossbarPositions, splines[i].points, currNumCtrlPts, i, prev_1_point, prev_2_point, next_1_point, connect_prev, connect_next);
 
-    // Set colors for line track
-    for (int j=0; j<uNumPoints; ++j) {
-      pointColors[j] = glm::vec4(1.0, 1.0, 1.0, 1.0);
-    }
     // TODO: remove this
     // Set colors for square track as normal
     // for (int j=0; j<uNumPoints-1; ++j) {
@@ -1436,8 +1429,7 @@ void initScene(int argc, char *argv[])
       for (int k=0; k<6; ++k) {
           // top
           tColors[j*60+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
-          // top left // TODO: change to slope normal
-          // tColors[j*60+1*6+k] = glm::vec3(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z);
+          // top left
           Point top_left_normal = splineNormals[i][j] * top_slope_ratio - splineBinormals[i][j];
           tColors[j*60+1*6+k] = glm::vec3(top_left_normal.x, top_left_normal.y, top_left_normal.z);
 
@@ -1446,16 +1438,14 @@ void initScene(int argc, char *argv[])
           // left
           tColors[j*60+3*6+k] = glm::vec3(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z);
 
-          // bottom top left // TODO: change this to slope normal
-          // tColors[j*60+4*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
+          // bottom top left
           Point bottom_left_normal = splineNormals[i][j] - splineBinormals[i][j] * bottom_slope_ratio;
           tColors[j*60+4*6+k] = glm::vec3(bottom_left_normal.x, bottom_left_normal.y, bottom_left_normal.z);
 
           // bottom
           tColors[j*60+5*6+k] = glm::vec3(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z);
 
-          // bottom top right // TODO: change this to slope normal
-          // tColors[j*60+6*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
+          // bottom top right
           Point bottom_right_normal = splineNormals[i][j] + splineBinormals[i][j] * bottom_slope_ratio;
           tColors[j*60+6*6+k] = glm::vec3(bottom_right_normal.x, bottom_right_normal.y, bottom_right_normal.z);
 
@@ -1465,7 +1455,6 @@ void initScene(int argc, char *argv[])
           tColors[j*60+8*6+k] = glm::vec3(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z);
 
           // top right
-          // tColors[j*60+9*6+k] = glm::vec3(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z);
           Point top_right_normal = splineNormals[i][j] * top_slope_ratio + splineBinormals[i][j];
           tColors[j*60+9*6+k] = glm::vec3(top_right_normal.x, top_right_normal.y, top_right_normal.z);
       }
@@ -1496,7 +1485,6 @@ void initScene(int argc, char *argv[])
     // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * uNumPoints, pointPositions);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * tIdxCnt, tLeftTrianglePositions);
     // Upload color data
-    // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints, sizeof(glm::vec4) * uNumPoints, pointColors);
     glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt, sizeof(glm::vec3) * tIdxCnt, tColors);
 
     glGenVertexArrays(1, &currLeftVAO);
@@ -1534,7 +1522,6 @@ void initScene(int argc, char *argv[])
     // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * uNumPoints, pointPositions);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * tIdxCnt, tRightTrianglePositions);
     // Upload color data
-    // glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints, sizeof(glm::vec4) * uNumPoints, pointColors);
     glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt, sizeof(glm::vec3) * tIdxCnt, tColors);
 
     glGenVertexArrays(1, &currRightVAO);
@@ -1571,7 +1558,6 @@ void initScene(int argc, char *argv[])
     splineVertexCnt.push_back(uNumPoints);
     splineSquareEBOCnt.push_back(60 * (uNumPoints - 1));
 
-    delete [] pointColors;
     delete [] pointPositions;
     // delete [] squareColors;
     // delete [] squareTrianglePositions;
