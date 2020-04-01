@@ -41,7 +41,7 @@ using namespace std;
 // Constant parameters
 const double param_s = 0.5;
 const double param_u_step = 0.001;
-const int param_speed = 3;
+const int param_speed = 10;
 const double param_rail_scale = 0.05;
 const float param_La[4] = {0.8, 0.8, 1, 1.0};
 const float param_Ld[4] = {0.8, 0.8, 0.5, 1.0};
@@ -66,8 +66,6 @@ const double ve_3 = 0.004375;
 
 // the “Sun” at noon
 const float lightDirection[3] = { -1, 0, 0 };
-
-bool close_loop = true;
 
 // represents one control point along the spline 
 struct Point 
@@ -184,6 +182,9 @@ struct CatmullMatrix
 CatmullMatrix computeMatrix;
 
 Point initial_V(0.0, 0.0, -1.0);
+
+bool close_loop = true;
+Point global_first_point, global_second_point, global_third_point;
 
 // the spline array 
 Spline * splines;
@@ -642,8 +643,12 @@ void displayFunc()
   // render some stuff...
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+  if (roller_frame_count >= splineVertexCnt[curr_spline_id]) {
+    ++curr_spline_id;
+    curr_spline_id %= numSplines;
+  }
   // Reset roller coaster frame counter
-  roller_frame_count %= splineVertexCnt[0];
+  roller_frame_count %= splineVertexCnt[curr_spline_id];
 
   float m[16], p[16]; // Column-major
   if (!camera_on_rail) {
@@ -664,19 +669,19 @@ void displayFunc()
   } else {
     matrix.SetMatrixMode(OpenGLMatrix::ModelView);
     matrix.LoadIdentity();
-    int focusIdx = (roller_frame_count+1) % splineVertexCnt[0];
+    int focusIdx = (roller_frame_count+1) % splineVertexCnt[curr_spline_id];
     // Skechy fix for focus point collision at sharp turns
-    Point eye_point = splinePointCoords[0][roller_frame_count] + splineNormals[0][roller_frame_count] * 0.02;
-    Point focus_point = splinePointCoords[0][focusIdx] + splineNormals[0][focusIdx] * 0.02;
+    Point eye_point = splinePointCoords[curr_spline_id][roller_frame_count] + splineNormals[curr_spline_id][roller_frame_count] * 0.02;
+    Point focus_point = splinePointCoords[curr_spline_id][focusIdx] + splineNormals[curr_spline_id][focusIdx] * 0.02;
     matrix.LookAt(eye_point.x, 
                   eye_point.y,
                   eye_point.z, // eye point
                   focus_point.x, 
                   focus_point.y,
                   focus_point.z,          // focus point          
-                  splineNormals[0][roller_frame_count].x,
-                  splineNormals[0][roller_frame_count].y,
-                  splineNormals[0][roller_frame_count].z);
+                  splineNormals[curr_spline_id][roller_frame_count].x,
+                  splineNormals[curr_spline_id][roller_frame_count].y,
+                  splineNormals[curr_spline_id][roller_frame_count].z);
     matrix.Translate(landTranslate[0], landTranslate[1], landTranslate[2]);
     matrix.Rotate(landRotate[0], 1, 0, 0);
     matrix.Rotate(landRotate[1], 0, 1, 0);
@@ -1262,6 +1267,12 @@ void compute_store_points_tangents (glm::vec3* pointPositions, int splineIdx, in
 void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePositions, vector<Point>& crossbarPositions, Point* points, int currNumCtrlPts, int splineIdx, Point& prev_1, Point& prev_2, Point& next_1, bool connect_prev, bool connect_next) {
   int pointCnt = 0;
 
+  if (splineIdx == 0) {
+    global_first_point = points[0];
+    global_second_point = points[1];
+    global_third_point = points[2];
+  }
+
   if (connect_prev) {
     // First segment to connect with previous spline
     for (int u_cnt=0; u_cnt < (int)(1.0 / param_u_step); ++u_cnt) {
@@ -1296,6 +1307,23 @@ void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePosi
   } else {
     compute_store_points_tangents(pointPositions, splineIdx, pointCnt, (int)(1.0 / param_u_step), points[currNumCtrlPts-4], points[currNumCtrlPts-3], points[currNumCtrlPts-2], points[currNumCtrlPts-1]);
     ++pointCnt;
+  }
+
+  // close loop if last spline
+  if (close_loop && splineIdx == numSplines - 1) {
+    // add three segments
+    for (int u_cnt=0; u_cnt <= (int)(1.0 / param_u_step); ++u_cnt) {
+      compute_store_points_tangents(pointPositions, splineIdx, pointCnt, u_cnt, points[currNumCtrlPts-3], points[currNumCtrlPts-2], points[currNumCtrlPts-1], global_first_point);
+      ++pointCnt;
+    }
+    for (int u_cnt=0; u_cnt <= (int)(1.0 / param_u_step); ++u_cnt) {
+      compute_store_points_tangents(pointPositions, splineIdx, pointCnt, u_cnt, points[currNumCtrlPts-2], points[currNumCtrlPts-1], global_first_point, global_second_point);
+      ++pointCnt;
+    }
+    for (int u_cnt=0; u_cnt <= (int)(1.0 / param_u_step); ++u_cnt) {
+      compute_store_points_tangents(pointPositions, splineIdx, pointCnt, u_cnt, points[currNumCtrlPts-1], global_first_point, global_second_point, global_third_point);
+      ++pointCnt;
+    }
   }
 
   cout << "IN func: " << pointCnt << endl;
@@ -1380,6 +1408,10 @@ void initScene(int argc, char *argv[])
 
     if (connect_prev) {
       uNumPoints += ((int)(1.0 / param_u_step));
+    }
+
+    if (close_loop && i == numSplines - 1) {
+      uNumPoints += ((int)(1.0 / param_u_step) * 3);
     }
 
     int crossbarIdxCnt = 36 * (uNumPoints - 1);
