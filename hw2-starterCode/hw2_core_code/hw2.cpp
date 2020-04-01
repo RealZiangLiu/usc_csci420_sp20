@@ -39,6 +39,10 @@
 using namespace std;
 
 // Constant parameters
+// =========== For extra credit: only set this to true for tracks that isn't already closed =========
+bool close_loop = false;
+// ==================================================================================================
+
 const double param_s = 0.5;
 const double param_u_step = 0.001;
 const int param_speed = 10;
@@ -181,9 +185,8 @@ struct CatmullMatrix
 
 CatmullMatrix computeMatrix;
 
-Point initial_V(0.0, 0.0, -1.0);
-
-bool close_loop = true;
+Point param_initial_V(0.0, 0.0, -1.0);
+Point global_initial_V;
 Point global_first_point, global_second_point, global_third_point;
 
 // the spline array 
@@ -211,7 +214,7 @@ char windowTitle[512] = "CSCI 420 homework II";
 
 int mode = 1;
 int record_animation = 0;
-int camera_on_rail = 0;
+int camera_on_rail = 1;
 int run_roller = 1;
 
 int roller_frame_count = 0;
@@ -643,12 +646,17 @@ void displayFunc()
   // render some stuff...
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  if (roller_frame_count >= splineVertexCnt[curr_spline_id]) {
+  if (roller_frame_count >= splineVertexCnt[curr_spline_id * 2]) {
+    roller_frame_count -= splineVertexCnt[curr_spline_id * 2];
+    cout << "before curr_id: " << curr_spline_id << endl;
     ++curr_spline_id;
     curr_spline_id %= numSplines;
+    cout << "after curr_id: " << curr_spline_id << endl;
+    roller_frame_count %= splineVertexCnt[curr_spline_id * 2];
+    cout << splineVertexCnt[curr_spline_id * 2] << endl;
   }
   // Reset roller coaster frame counter
-  roller_frame_count %= splineVertexCnt[curr_spline_id];
+  // roller_frame_count %= splineVertexCnt[curr_spline_id];
 
   float m[16], p[16]; // Column-major
   if (!camera_on_rail) {
@@ -669,7 +677,7 @@ void displayFunc()
   } else {
     matrix.SetMatrixMode(OpenGLMatrix::ModelView);
     matrix.LoadIdentity();
-    int focusIdx = (roller_frame_count+1) % splineVertexCnt[curr_spline_id];
+    int focusIdx = (roller_frame_count+1) % splineVertexCnt[curr_spline_id * 2];
     // Skechy fix for focus point collision at sharp turns
     Point eye_point = splinePointCoords[curr_spline_id][roller_frame_count] + splineNormals[curr_spline_id][roller_frame_count] * 0.02;
     Point focus_point = splinePointCoords[curr_spline_id][focusIdx] + splineNormals[curr_spline_id][focusIdx] * 0.02;
@@ -682,11 +690,11 @@ void displayFunc()
                   splineNormals[curr_spline_id][roller_frame_count].x,
                   splineNormals[curr_spline_id][roller_frame_count].y,
                   splineNormals[curr_spline_id][roller_frame_count].z);
-    matrix.Translate(landTranslate[0], landTranslate[1], landTranslate[2]);
-    matrix.Rotate(landRotate[0], 1, 0, 0);
-    matrix.Rotate(landRotate[1], 0, 1, 0);
-    matrix.Rotate(landRotate[2], 0, 0, 1);
-    matrix.Scale(landScale[0], landScale[1], landScale[2]);
+    // matrix.Translate(landTranslate[0], landTranslate[1], landTranslate[2]);
+    // matrix.Rotate(landRotate[0], 1, 0, 0);
+    // matrix.Rotate(landRotate[1], 0, 1, 0);
+    // matrix.Rotate(landRotate[2], 0, 0, 1);
+    // matrix.Scale(landScale[0], landScale[1], landScale[2]);
     matrix.GetMatrix(m);
 
     matrix.SetMatrixMode(OpenGLMatrix::Projection);
@@ -810,10 +818,10 @@ void idleFunc()
 {
   if (record_animation == 1) {
     // Save screenshots for animation
-    if (frame_cnt % 4 == 0 && frame_cnt < 1200) {
+    if (frame_cnt % 3 == 0 && frame_cnt < 3000) {
       string file_path = "../screenshots/";
       string id;
-      int t = frame_cnt / 4;
+      int t = frame_cnt / 3;
       for (int i=0; i<3; ++i) {
         id += to_string(t % 10);
         t /= 10;
@@ -1330,8 +1338,13 @@ void compute_catmull_rom_point (glm::vec3* pointPositions, glm::vec3* squarePosi
 
   // Compute initial Frenet Frame vectors
   Point T_0 = splineTangents[splineIdx][0];
-  Point N_0 = normalize(T_0.cross(initial_V));
-  Point B_0 = normalize(T_0.cross(N_0));
+  Point N_0, B_0;
+  if (connect_prev) {
+    N_0 = normalize(splineBinormals[splineIdx-1][splineBinormals[splineIdx-1].size()-1].cross(T_0));
+  } else {
+    N_0 = normalize(T_0.cross(param_initial_V));
+  }
+  B_0 = normalize(T_0.cross(N_0));
   splineNormals[splineIdx].push_back(N_0);
   splineBinormals[splineIdx].push_back(B_0);
   for (int i=1; i<pointCnt; ++i) {
@@ -1404,7 +1417,7 @@ void initScene(int argc, char *argv[])
       connect_next = true;
       next_1_point = splines[i+1].points[1];
     }
-    cout << connect_prev << " " << connect_next << endl;
+    cout << "connect_prev: " << connect_prev << " connect next: " << connect_next << endl;
 
     if (connect_prev) {
       uNumPoints += ((int)(1.0 / param_u_step));
@@ -1593,6 +1606,10 @@ void initScene(int argc, char *argv[])
     delete [] pointPositions;
     // delete [] squareColors;
     // delete [] squareTrianglePositions;
+  }
+
+  for (int i=0; i<splineVertexCnt.size(); ++i) {
+    cout << "VertexCnt: " << splineVertexCnt[i] << endl;
   }
   glEnable(GL_DEPTH_TEST);
 
