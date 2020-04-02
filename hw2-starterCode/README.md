@@ -3,6 +3,8 @@ Assignment 2: Simulating a Roller Coaster
 Author		: Ziang Liu
 USC ID 		: 9114346039
 
+### Please send me an email at ziangliu@usc.edu should there be any questions or that something fails to run. Thank you in advance for grading my assignment.
+
 Description: In this assignment, we use Catmull-Rom splines along with OpenGL core profile shader-based texture mapping and Phong shading to create a roller coaster simulation.
 
 Core Credit Features: (Answer these Questions with Y/N; you can also insert comments as appropriate)
@@ -65,6 +67,7 @@ Additional Features: (Please document any additional features you may have imple
 to be accurate for each surface as well.
 2. Better eye focus point. Using the tangent as the focus gives really weird and unrealistic results. Thus, I'm using the position
 of the next point on the spline plus the some faction of the normal at that point as the focus. This way the eye follows the track closely.
+3. Created a custom track file, called "audi.sp", placed under the splines folder. This is basically the logo of Audi.
 
 Open-Ended Problems: (Please document approaches to any open-ended problems that you have tackled)
 1.  The cross section described in the Additional Features is rendered with 10 points for each point on the spline, controlled by several
@@ -86,7 +89,6 @@ Keyboard/Mouse controls: (Please document Keyboard/Mouse controls if any)
 Names of the .cpp files you made changes to:
 1. hw2.cpp
 2. basicPipelineProgram.cpp
-3.
 
 Comments : (If any)
 - Compile with:     make
