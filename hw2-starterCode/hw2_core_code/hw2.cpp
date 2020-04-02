@@ -45,7 +45,7 @@ bool close_loop = false;
 
 const double param_s = 0.5;
 const double param_u_step = 0.001;
-const int param_speed = 10;
+const int param_speed = 5;
 const double param_rail_scale = 0.05;
 const float param_La[4] = {0.8, 0.8, 1, 1.0};
 const float param_Ld[4] = {0.8, 0.8, 0.5, 1.0};
@@ -1397,10 +1397,8 @@ void initScene(int argc, char *argv[])
   splineBinormals.resize(numSplines);
 
   for (int i=0; i<numSplines; ++i) {
-    // cout << "[DEBUG] Control points: " << splines[i].numControlPoints << endl;
 
     int currNumCtrlPts = splines[i].numControlPoints;
-    // currNumCtrlPts - 3 segments, +1 for endpoint
     int uNumPoints = ((int)(1.0 / param_u_step)) * (currNumCtrlPts - 3) + 1;
 
     GLuint currLeftVBO, currRightVBO, currLeftVAO, currRightVAO;
@@ -1439,33 +1437,13 @@ void initScene(int argc, char *argv[])
 
     glm::vec3* tPositions = new glm::vec3[uNumPoints * 10];
 
-    // glm::vec3* squareTrianglePositions = new glm::vec3[squareIdxCnt];
-
-    // unsigned int* squareIndex = new unsigned int[squareIdxCnt];
-
-    // TODO: Change this to normal
-    // glm::vec3* squareColors = new glm::vec3[squareIdxCnt];
     glm::vec3* tColors = new glm::vec3[tIdxCnt];
+
     // Disable multiple curve connection
     // connect_prev = false;
     // connect_next = false;
     
     compute_catmull_rom_point(pointPositions, tPositions, crossbarPositions, splines[i].points, currNumCtrlPts, i, prev_1_point, prev_2_point, next_1_point, connect_prev, connect_next);
-
-    // TODO: remove this
-    // Set colors for square track as normal
-    // for (int j=0; j<uNumPoints-1; ++j) {
-    //   for (int k=0; k<6; ++k) {
-    //       // bottom right: right
-    //       squareColors[j*24+k] = glm::vec3(splineBinormals[i][j].x, splineBinormals[i][j].y, splineBinormals[i][j].z);
-    //       // top right: top
-    //       squareColors[j*24+1*6+k] = glm::vec3(splineNormals[i][j].x, splineNormals[i][j].y, splineNormals[i][j].z);
-    //       // top left: left
-    //       squareColors[j*24+2*6+k] = glm::vec3(-splineBinormals[i][j].x, -splineBinormals[i][j].y, -splineBinormals[i][j].z);
-    //       // bottom left: bottom
-    //       squareColors[j*24+3*6+k] = glm::vec3(-splineNormals[i][j].x, -splineNormals[i][j].y, -splineNormals[i][j].z);
-    //   }
-    // }
 
     double top_slope_ratio = 0.535676;
     double bottom_slope_ratio = 0.269055;
@@ -1524,10 +1502,8 @@ void initScene(int argc, char *argv[])
     glGenBuffers(1, &currLeftVBO);
     glBindBuffer(GL_ARRAY_BUFFER, currLeftVBO);
 
-    // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints + sizeof(glm::vec4) * uNumPoints, nullptr, GL_STATIC_DRAW);
     glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt + sizeof(glm::vec3) * tIdxCnt, nullptr, GL_STATIC_DRAW);
     // Upload position data
-    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * uNumPoints, pointPositions);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * tIdxCnt, tLeftTrianglePositions);
     // Upload color data
     glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt, sizeof(glm::vec3) * tIdxCnt, tColors);
@@ -1546,8 +1522,6 @@ void initScene(int argc, char *argv[])
     // Set "color" layout
     loc = glGetAttribLocation(milestonePipelineProgram->GetProgramHandle(), "normal");
     glEnableVertexAttribArray(loc);
-    // offset = (const void*) sizeof(pointPositions);
-    // offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
     offset = (const void*) (sizeof(glm::vec3) * tIdxCnt);
     glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
 
@@ -1561,10 +1535,8 @@ void initScene(int argc, char *argv[])
     glGenBuffers(1, &currRightVBO);
     glBindBuffer(GL_ARRAY_BUFFER, currRightVBO);
 
-    // glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * uNumPoints + sizeof(glm::vec4) * uNumPoints, nullptr, GL_STATIC_DRAW);
     glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt + sizeof(glm::vec3) * tIdxCnt, nullptr, GL_STATIC_DRAW);
     // Upload position data
-    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * uNumPoints, pointPositions);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * tIdxCnt, tRightTrianglePositions);
     // Upload color data
     glBufferSubData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * tIdxCnt, sizeof(glm::vec3) * tIdxCnt, tColors);
@@ -1583,8 +1555,6 @@ void initScene(int argc, char *argv[])
     // Set "color" layout
     loc = glGetAttribLocation(milestonePipelineProgram->GetProgramHandle(), "normal");
     glEnableVertexAttribArray(loc);
-    // offset = (const void*) sizeof(pointPositions);
-    // offset = (const void*) (sizeof(glm::vec3) * uNumPoints);
     offset = (const void*) (sizeof(glm::vec3) * tIdxCnt);
     glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, stride, offset);
 
@@ -1603,9 +1573,12 @@ void initScene(int argc, char *argv[])
     splineVertexCnt.push_back(uNumPoints);
     splineSquareEBOCnt.push_back(60 * (uNumPoints - 1));
 
+    delete [] crossbarTrianglePositions;
+    delete [] tRightTrianglePositions;
+    delete [] tLeftTrianglePositions;
+    delete [] tColors;
+    delete [] tPositions;
     delete [] pointPositions;
-    // delete [] squareColors;
-    // delete [] squareTrianglePositions;
   }
 
   for (int i=0; i<splineVertexCnt.size(); ++i) {
