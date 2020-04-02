@@ -57,7 +57,7 @@ Extra Credit Features: (Answer these Questions with Y/N; you can also insert com
 10. Improved coaster normals - Y.
     Note: using the better and more realistic normal computation (Frenet).
 
-11. Modify velocity with which the camera moves - TODO
+11. Modify velocity with which the camera moves - N
 
 12. Derive the steps that lead to the physically realistic equation of updating u - Y. 
     Note: Steps are shown in a PDF filed named "extra_credit_formula_derivation_ziang_liu.pdf" in the root directory.
