@@ -3,6 +3,12 @@
         "vector": "cpp",
         "new": "cpp",
         "ostream": "cpp",
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "__split_buffer": "cpp",
+        "deque": "cpp",
+        "list": "cpp",
+        "string": "cpp",
+        "*.ipp": "cpp",
+        "chrono": "cpp"
     }
 }

@@ -1,0 +1,10 @@
+1
+splines/circle.sp
+splines/goodRide.sp
+splines/leftturn.sp
+splines/xyz.sp
+splines/rollerCoaster.sp
+
+splines/star.sp
+
+splines/goodRide.sp

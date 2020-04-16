@@ -1,0 +1,4 @@
+1
+splines/circle.sp
+splines/goodRide.sp
+splines/xyz.sp
