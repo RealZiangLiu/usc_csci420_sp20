@@ -20,6 +20,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <iostream>
+#include <cmath>
+#include <limits>
+#include <algorithm>
+
 #ifdef WIN32
   #define strcasecmp _stricmp
 #endif
@@ -44,8 +49,26 @@ int mode = MODE_DISPLAY;
 
 //the field of view of the camera
 #define fov 60.0
+#define FOV_ANGLE_HALF (fov / 2.0 * M_PI / 180.0)
+
+#define ASPECT_RATIO (1.0 * WIDTH / HEIGHT)
+#define PIXEL_LENGTH (2.0 * tan(FOV_ANGLE_HALF) / HEIGHT)
+#define TOP_LEFT_X (-ASPECT_RATIO * tan(FOV_ANGLE_HALF) + PIXEL_LENGTH / 2.0)
+#define TOP_LEFT_Y (tan(FOV_ANGLE_HALF) + PIXEL_LENGTH / 2.0)
+
+const double CAMERA_POS[3] = {0.0, 0.0, 0.0};
 
 unsigned char buffer[HEIGHT][WIDTH][3];
+
+/*
+  Type definitions
+*/
+struct Point
+{
+  double x;
+  double y;
+  double z;
+};
 
 struct Vertex
 {
@@ -76,10 +99,51 @@ struct Light
   double color[3];
 };
 
+struct Ray
+{
+  double origin[3];
+  double direction[3];
+
+  /*
+    Normalize and set direction
+  */
+  void set_direction (double x, double y, double z) {
+    double length = sqrt(x*x + y*y + z*z);
+    if (length > 0.0) {
+      direction[0] = x / length;
+      direction[1] = y / length;
+      direction[2] = z / length;
+    }
+  }
+};
+
+struct Color
+{
+  double r;
+  double g;
+  double b;
+  void set_color (double r_, double g_, double b_) {
+    r = r_;
+    g = g_;
+    b = b_;
+  }
+};
+
+/*
+  Global constant parameters
+*/
+
+
+/*
+  Global variables
+*/
 Triangle triangles[MAX_TRIANGLES];
 Sphere spheres[MAX_SPHERES];
 Light lights[MAX_LIGHTS];
 double ambient_light[3];
+
+Ray rays[HEIGHT][WIDTH];
+
 
 int num_triangles = 0;
 int num_spheres = 0;
@@ -89,21 +153,178 @@ void plot_pixel_display(int x,int y,unsigned char r,unsigned char g,unsigned cha
 void plot_pixel_jpeg(int x,int y,unsigned char r,unsigned char g,unsigned char b);
 void plot_pixel(int x,int y,unsigned char r,unsigned char g,unsigned char b);
 
+// Generate a single ray, given index on the view grid
+Ray generate_single_ray (int x, int y, const double origin[3]) {
+  Ray ray;
+  ray.origin[0] = origin[0];
+  ray.origin[1] = origin[1];
+  ray.origin[2] = origin[2];
+
+  ray.set_direction(TOP_LEFT_X + x * PIXEL_LENGTH,
+                    TOP_LEFT_Y - y * PIXEL_LENGTH,
+                    -1);
+  return ray;
+}
+
+void normalize (double* input) {
+  double len = sqrt(input[0]*input[0] + input[1]*input[1] + input[2]*input[2]);
+  if (len > 0.0) {
+    input[0] /= len;
+    input[1] /= len;
+    input[2] /= len;
+  }
+}
+
+void compute_direction_vector (const double* start, const double* end, double* result) {
+  result[0] = end[0] - start[0];
+  result[1] = end[1] - start[1];
+  result[2] = end[2] - start[2];
+  normalize(result);
+}
+
+void sphere_intersection (int obj_index, int x, int y, double& closest_t, double* normal, int& intersection_obj_idx) {
+  Ray* curr_ray = &(rays[y][x]);
+  Sphere* curr_sphere = &(spheres[obj_index]);
+  // Iterate over all spheres
+  double b = 2 * (curr_ray->direction[0] * (curr_ray->origin[0] - curr_sphere->position[0])
+                + curr_ray->direction[1] * (curr_ray->origin[1] - curr_sphere->position[1])
+                + curr_ray->direction[2] * (curr_ray->origin[2] - curr_sphere->position[2]));
+  double c = (curr_ray->origin[0] - curr_sphere->position[0]) * (curr_ray->origin[0] - curr_sphere->position[0])
+           + (curr_ray->origin[1] - curr_sphere->position[1]) * (curr_ray->origin[1] - curr_sphere->position[1])
+           + (curr_ray->origin[2] - curr_sphere->position[2]) * (curr_ray->origin[2] - curr_sphere->position[2])
+           - curr_sphere->radius * curr_sphere->radius;
+
+  // If this is less than 0 then no intersection
+  if (b*b - 4*c < 0) {
+    return;
+  }
+  double t_0 = (-b - sqrt(b*b - 4*c)) / 2;
+  double t_1 = (-b + sqrt(b*b - 4*c)) / 2;
+  t_0 = std::min(t_0, t_1);
+  
+  // std::cout << "t_0: " << t_0 << std::endl;
+  // Update clostest_t and normal if the new intersection point is closer
+  if (t_0 < closest_t) {
+    closest_t = t_0;
+    intersection_obj_idx = obj_index;
+    // Compute normal
+    double intersection_point[3] = {curr_ray->origin[0] + t_0 * curr_ray->direction[0],
+                                    curr_ray->origin[1] + t_0 * curr_ray->direction[1],
+                                    curr_ray->origin[2] + t_0 * curr_ray->direction[2]};
+    compute_direction_vector(curr_sphere->position, intersection_point, normal);
+  }
+}
+
+double dot (const double* a, const double* b) {
+  return (a[0]*b[0] + a[1]*b[1] + a[2]*b[2]);
+}
+
+void compute_reflected_ray (const double* in, const double* normal, double* result) {
+  double factor = 2 * dot(in, normal);
+  for (int i=0; i<3; ++i) {
+    result[i] = factor * normal[i] - in[i];
+  }
+}
+
+void get_phong_color (Color& color, int obj_idx, double* intersection_point, double* normal) {
+  double curr_color[3] = {0.0, 0.0, 0.0};
+  // Loop through all lights
+  for (int i=0; i<num_lights; ++i) {
+    double light_direction[3];
+    compute_direction_vector(intersection_point, lights[i].position, light_direction);
+
+    double view_direction[3];
+    compute_direction_vector(intersection_point, CAMERA_POS, view_direction);
+    
+    double reflected_ray[3];
+    compute_reflected_ray(light_direction, normal, reflected_ray);
+    // For each channel
+    for (int c=0; c<3; ++c) {
+      double I = lights[i].color[c] * (spheres[obj_idx].color_diffuse[c] * std::max(0.0, dot(light_direction, normal))
+                                      + spheres[obj_idx].color_specular[c] * pow(std::max(0.0, dot(reflected_ray, view_direction)), spheres[obj_idx].shininess));
+      std::cout << "I: " << I << std::endl;
+      curr_color[c] += I;
+    }
+  }
+  std::cout << "color: " << curr_color[0] << " " << curr_color[1] << " " << curr_color[2] << std::endl;
+  color.r = std::min(1.0, curr_color[0]);
+  color.g = std::min(1.0, curr_color[1]);
+  color.b = std::min(1.0, curr_color[2]);
+}
+
+/*
+  Return pixel color given index of the ray
+*/
+Color get_pixel_color (int x, int y) {
+  // std::cout << "Get_pixel_color: " << x << " , " << y << std::endl;
+  double closest_t = std::numeric_limits<double>::max();
+  double normal[3] = {0.0, 0.0, 0.0};
+  int intersection_obj_idx = -1;
+
+  Color color = {1.0, 1.0, 1.0};
+
+  // First check spheres
+  for (int obj_index=0; obj_index<num_spheres; ++obj_index) {
+    sphere_intersection(obj_index, x, y, closest_t, normal, intersection_obj_idx);
+  }
+
+  // Then triangles
+  // TODO
+
+  // Set color based on closest_t and intersection normal.
+  // If found intersection then use phong model to update color.
+  // Otherwise color will be white.
+  if (intersection_obj_idx != -1) {
+    // Compute intersection point
+    double intersection_point[3];
+    for (int i=0; i<3; ++i) {
+      intersection_point[i] = rays[y][x].origin[i] + closest_t * rays[y][x].direction[i];
+    }
+    get_phong_color(color, intersection_obj_idx, intersection_point, normal);
+  }
+  return color;
+}
+
 //MODIFY THIS FUNCTION
 void draw_scene()
 {
-  //a simple test output
-  for(unsigned int x=0; x<WIDTH; x++)
-  {
-    glPointSize(2.0);  
+  // //a simple test output
+  // for(unsigned int x=0; x<WIDTH; x++)
+  // {
+  //   glPointSize(2.0);  
+  //   glBegin(GL_POINTS);
+  //   for(unsigned int y=0; y<HEIGHT; y++)
+  //   {
+  //     plot_pixel(x, y, x % 256, y % 256, (x+y) % 256);
+  //   }
+  //   glEnd();
+  //   glFlush();
+  // }
+  std::cout << "pixel length: " << PIXEL_LENGTH << std::endl;
+
+  // Iterate over every pixel on the image grid, row by row
+  for (int y=0; y<HEIGHT; ++y) {
+    for (int x=0; x<WIDTH; ++x) {
+      rays[y][x] = generate_single_ray(x, y, CAMERA_POS);
+    }
+  }
+
+  // For each ray, iterate over all objects in the scene and perform intersection tests
+  for (int y=0; y<HEIGHT; ++y) {
+    glPointSize(2.0);
     glBegin(GL_POINTS);
-    for(unsigned int y=0; y<HEIGHT; y++)
-    {
-      plot_pixel(x, y, x % 256, y % 256, (x+y) % 256);
+
+    for (int x=0; x<WIDTH; ++x) {
+      Color color = get_pixel_color(x, y);
+      // std::cout << "color: " << (int)color.r << " " << (int)color.g << " " << (int)color.b << std::endl;
+      // Vertical invert
+      plot_pixel(x, HEIGHT - y, color.r * 255, color.g * 255, color.b * 255);
     }
     glEnd();
     glFlush();
   }
+
+
   printf("Done!\n"); fflush(stdout);
 }
 
