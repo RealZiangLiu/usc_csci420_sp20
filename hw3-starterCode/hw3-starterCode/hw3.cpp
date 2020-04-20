@@ -322,7 +322,6 @@ void triangle_intersection (Triangle& triangle, Ray& ray, int obj_index, double&
   // Use Barycentric coordinates to check whether intersection point lies in the triangle
   
   // Project to plane based on triangle surface normal
-  // TODO: Check this
   double P[3] = {ray.origin[0] + t * ray.direction[0], ray.origin[1] + t * ray.direction[1], ray.origin[2] + t * ray.direction[2]};
 
   double alpha, beta, gamma;
@@ -354,7 +353,6 @@ void compute_intersection_point (Ray& ray, double& closest_t, double* normal, in
 
   // Intersect triangles
   for (int i=0; i<num_triangles; ++i) {
-    // TODO: call triangle intersection function
     triangle_intersection(triangles[i], ray, i, closest_t, normal, intersection_obj_idx, is_sphere);
   }
 }
@@ -415,7 +413,6 @@ void get_phong_color (Color& color, int obj_idx, double* intersection_point, dou
       }
     }
   } else {  // the object is a triangle
-    // TODO: Check this test
     double P[3] = {intersection_point[0], intersection_point[1], intersection_point[2]};
     double alpha, beta, gamma;
     compute_barycentric_coefficients(triangles[obj_idx].v[0].position, 
