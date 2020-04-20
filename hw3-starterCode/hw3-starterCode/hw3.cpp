@@ -42,7 +42,7 @@
 #define SHADOW_RAY_EPS 0.00001
 
 // Epsilon for triangle_parallel check
-#define TRI_INTERSECT_EPS 0.001
+#define TRI_INTERSECT_EPS 0.00001
 
 char * filename = NULL;
 
@@ -66,6 +66,10 @@ int mode = MODE_DISPLAY;
 #define TOP_LEFT_Y (tan(FOV_ANGLE_HALF) + PIXEL_LENGTH / 2.0)
 
 const double CAMERA_POS[3] = {0.0, 0.0, 0.0};
+
+double unit_x[3] = {1.0, 0.0, 0.0};
+double unit_y[3] = {0.0, 1.0, 0.0};
+double unit_z[3] = {0.0, 0.0, 1.0};
 
 unsigned char buffer[HEIGHT][WIDTH][3];
 
@@ -205,6 +209,10 @@ void sub (const double* a, const double* b, double* result) {
   result[2] = a[2] - b[2];
 }
 
+double distance (const double* a, const double* b) {
+  return (sqrt((b[0]-a[0])*(b[0]-a[0]) + (b[1]-a[1])*(b[1]-a[1]) + (b[2]-a[2])*(b[2]-a[2])));
+}
+
 void compute_direction_vector (const double* start, const double* end, double* result) {
   result[0] = end[0] - start[0];
   result[1] = end[1] - start[1];
@@ -212,20 +220,39 @@ void compute_direction_vector (const double* start, const double* end, double* r
   normalize(result);
 }
 
-void compute_barycentric_coefficients (const double* A, const double* B, const double* C, const double* P, double& alpha, double& beta, double& gamma) {
-  // double proj_A[3] = {A[0], A[1], 0.0};
-  // double proj_B[3] = {B[0], B[1], 0.0};
-  // double proj_C[3] = {C[0], C[1], 0.0};
+void compute_barycentric_coefficients (const double* A, const double* B, const double* C, const double* P, const double* triangle_normal, double& alpha, double& beta, double& gamma) {
+  int clear_idx = 0;
+  int first_idx = 0, second_idx = 2;;
 
-  //TODO: remov this
-  double proj_A[3] = {A[0], 0.0, A[2]};
-  double proj_B[3] = {B[0], 0.0, B[2]};
-  double proj_C[3] = {C[0], 0.0, C[2]};
+  // Find appropiate plant to project to
+  if (abs(dot(triangle_normal, unit_z)) > TRI_INTERSECT_EPS) {
+    clear_idx = 2;
+    first_idx = 0;
+    second_idx = 1;
+  } else if (abs(dot(triangle_normal, unit_x)) > TRI_INTERSECT_EPS) {
+    clear_idx = 0;
+    first_idx = 1;
+    second_idx = 2;
+  } else {
+    clear_idx = 1;
+    first_idx = 0;
+    second_idx = 2;
+  }
 
-  double area_ABC = 0.5 * ((proj_B[0] - proj_A[0]) * (proj_C[2] - proj_A[2]) - (proj_C[0] - proj_A[0]) * (proj_B[2] - proj_A[2]));
-  double area_PBC = 0.5 * ((proj_B[0] - P[0]) * (proj_C[2] - P[2]) - (proj_C[0] - P[0]) * (proj_B[2] - P[2]));
-  double area_APC = 0.5 * ((P[0] - proj_A[0]) * (proj_C[2] - proj_A[2]) - (proj_C[0] - proj_A[0]) * (P[2] - proj_A[2]));
-  double area_ABP = 0.5 * ((proj_B[0] - proj_A[0]) * (P[2] - proj_A[2]) - (P[0] - proj_A[0]) * (proj_B[2] - proj_A[2]));
+  double proj_A[3] = {A[0], A[1], A[2]};
+  double proj_B[3] = {B[0], B[1], B[2]};
+  double proj_C[3] = {C[0], C[1], C[2]};
+  double proj_P[3] = {P[0], P[1], P[2]};
+
+  proj_A[clear_idx] = 0.0;
+  proj_B[clear_idx] = 0.0;
+  proj_C[clear_idx] = 0.0;
+  proj_P[clear_idx] = 0.0;
+
+  double area_ABC = 0.5 * ((proj_B[first_idx] - proj_A[first_idx]) * (proj_C[second_idx] - proj_A[second_idx]) - (proj_C[first_idx] - proj_A[first_idx]) * (proj_B[second_idx] - proj_A[second_idx]));
+  double area_PBC = 0.5 * ((proj_B[first_idx] - proj_P[first_idx]) * (proj_C[second_idx] - proj_P[second_idx]) - (proj_C[first_idx] - proj_P[first_idx]) * (proj_B[second_idx] - proj_P[second_idx]));
+  double area_APC = 0.5 * ((proj_P[first_idx] - proj_A[first_idx]) * (proj_C[second_idx] - proj_A[second_idx]) - (proj_C[first_idx] - proj_A[first_idx]) * (proj_P[second_idx] - proj_A[second_idx]));
+  double area_ABP = 0.5 * ((proj_B[first_idx] - proj_A[first_idx]) * (proj_P[second_idx] - proj_A[second_idx]) - (proj_P[first_idx] - proj_A[first_idx]) * (proj_B[second_idx] - proj_A[second_idx]));
   
   alpha = area_PBC / area_ABC;
   beta = area_APC / area_ABC;
@@ -270,7 +297,6 @@ void sphere_intersection (Sphere& sphere, Ray& ray, const int obj_index, double&
   Compute intersection of ray and triangle
 */
 void triangle_intersection (Triangle& triangle, Ray& ray, int obj_index, double& closest_t, double* normal, int& intersection_obj_idx, bool& is_sphere) {
-  // TODO: check this
   double triangle_normal[3];
 
   // Compute normal of the triangle using vectors B-A and C-A
@@ -298,15 +324,12 @@ void triangle_intersection (Triangle& triangle, Ray& ray, int obj_index, double&
 
   // Use Barycentric coordinates to check whether intersection point lies in the triangle
   
-  // Project to xy-plane
-  // TODO: Change to more robust projection, check whether triangle degrades to a line after projection
-  double P[3] = {ray.origin[0] + t * ray.direction[0], ray.origin[1] + t * ray.direction[1], 0.0};
-  // TODO: remove this
-  P[1] = 0.0;
-  P[2] = ray.origin[2] + t * ray.direction[2];
+  // Project to plane based on triangle surface normal
+  // TODO: Check this
+  double P[3] = {ray.origin[0] + t * ray.direction[0], ray.origin[1] + t * ray.direction[1], ray.origin[2] + t * ray.direction[2]};
 
   double alpha, beta, gamma;
-  compute_barycentric_coefficients(triangle.v[0].position, triangle.v[1].position, triangle.v[2].position, P, alpha, beta, gamma);
+  compute_barycentric_coefficients(triangle.v[0].position, triangle.v[1].position, triangle.v[2].position, P, triangle_normal, alpha, beta, gamma);
   
   if (alpha < 0 || beta < 0 || gamma < 0) {
     return;
@@ -372,27 +395,36 @@ void get_phong_color (Color& color, int obj_idx, double* intersection_point, dou
       bool is_sphere_not_used = false;
       compute_intersection_point(shadow_ray, closest_t, normal, intersection_obj_idx, is_sphere_not_used);
 
+      // check distantce to intersection and to light source
+      double dist_intersect = 0.0;
+      double dist_light = 0.0;
+      if (intersection_obj_idx != -1) {
+        // Compute shadow ray intersection point
+        double shadow_intersection_point[3];
+        for (int j=0; j<3; ++j) {
+          shadow_intersection_point[j] = shadow_ray.origin[j] + closest_t * shadow_ray.direction[j];
+        }
+        dist_intersect = distance(shadow_intersection_point, intersection_point);
+        dist_light = distance(lights[i].position, intersection_point);
+      }
       // If not in shadow then apply phong model. Otherwise, color it black.
-      if (intersection_obj_idx == -1) {
+      if (intersection_obj_idx == -1 || dist_intersect > dist_light - SHADOW_RAY_EPS) {
         // For each color channel
         for (int c=0; c<3; ++c) {
-          double I = lights[i].color[c] * (spheres[obj_idx].color_diffuse[c] * std::max(0.0, dot(light_direction, normal))
-                                          + spheres[obj_idx].color_specular[c] * pow(std::max(0.0, dot(reflected_ray, view_direction)), spheres[obj_idx].shininess));
+          double I = lights[i].color[c] * (spheres[obj_idx].color_diffuse[c] * std::max(0.0, std::min(1.0, dot(light_direction, normal)))
+                                          + spheres[obj_idx].color_specular[c] * pow(std::max(0.0, std::min(1.0, dot(reflected_ray, view_direction))), spheres[obj_idx].shininess));
           curr_color[c] += I;
         }
       }
     }
   } else {  // the object is a triangle
-    // TODO: Add color computation
-    double P[3] = {intersection_point[0], intersection_point[1], 0.0};
-    // TODO: remove this
-    P[1] = 0.0;
-    P[2] = intersection_point[2];
+    // TODO: Check this test
+    double P[3] = {intersection_point[0], intersection_point[1], intersection_point[2]};
     double alpha, beta, gamma;
     compute_barycentric_coefficients(triangles[obj_idx].v[0].position, 
                                       triangles[obj_idx].v[1].position, 
                                       triangles[obj_idx].v[2].position,
-                                      P, alpha, beta, gamma);
+                                      P, normal, alpha, beta, gamma);
     // Interpolate normal
     normal[0] = alpha * triangles[obj_idx].v[0].normal[0]
               + beta * triangles[obj_idx].v[1].normal[0]
@@ -439,12 +471,24 @@ void get_phong_color (Color& color, int obj_idx, double* intersection_point, dou
       bool is_sphere_not_used = false;
       compute_intersection_point(shadow_ray, closest_t, normal, intersection_obj_idx, is_sphere_not_used);
 
+      // check distantce to intersection and to light source
+      double dist_intersect = 0.0;
+      double dist_light = 0.0;
+      if (intersection_obj_idx != -1) {
+        // Compute shadow ray intersection point
+        double shadow_intersection_point[3];
+        for (int j=0; j<3; ++j) {
+          shadow_intersection_point[j] = shadow_ray.origin[j] + closest_t * shadow_ray.direction[j];
+        }
+        dist_intersect = distance(shadow_intersection_point, intersection_point);
+        dist_light = distance(lights[i].position, intersection_point);
+      }
       // If not in shadow then apply phong model. Otherwise, color it black.
-      if (intersection_obj_idx == -1) {
+      if (intersection_obj_idx == -1 || dist_intersect > dist_light - SHADOW_RAY_EPS) {
         // For each color channel
         for (int c=0; c<3; ++c) {
-          double I = lights[i].color[c] * (diffuse[c] * std::max(0.0, dot(light_direction, normal))
-                                          + specular[c] * pow(std::max(0.0, dot(reflected_ray, view_direction)), shininess));
+          double I = lights[i].color[c] * (diffuse[c] * std::max(0.0, std::min(1.0, dot(light_direction, normal)))
+                                          + specular[c] * pow(std::max(0.0, std::min(1.0, dot(reflected_ray, view_direction))), shininess));
           curr_color[c] += I;
         }
       }
