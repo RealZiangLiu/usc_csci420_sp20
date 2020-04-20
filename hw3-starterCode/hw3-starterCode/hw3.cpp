@@ -312,10 +312,7 @@ void triangle_intersection (Triangle& triangle, Ray& ray, int obj_index, double&
 
   // Compute d value
   double d = -dot(triangle.v[0].position, triangle_normal);
-  double dist[3];
-  sub(ray.origin, triangle.v[0].position, dist);
-
-  double t = (-(dot(triangle_normal, dist))) / dot(triangle_normal, ray.direction);
+  double t = (-(dot(triangle_normal, ray.origin) + d)) / dot(triangle_normal, ray.direction);
 
   // Intersection befind ray origin
   if (t < TRI_INTERSECT_EPS) {
@@ -469,7 +466,8 @@ void get_phong_color (Color& color, int obj_idx, double* intersection_point, dou
       double closest_t = std::numeric_limits<double>::max();
       int intersection_obj_idx = -1;
       bool is_sphere_not_used = false;
-      compute_intersection_point(shadow_ray, closest_t, normal, intersection_obj_idx, is_sphere_not_used);
+      double normal_not_used[3];
+      compute_intersection_point(shadow_ray, closest_t, normal_not_used, intersection_obj_idx, is_sphere_not_used);
 
       // check distantce to intersection and to light source
       double dist_intersect = 0.0;
