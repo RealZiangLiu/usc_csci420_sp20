@@ -9,10 +9,9 @@ IMAGE_LIB_OBJ=$(notdir $(patsubst %.cpp,%.o,$(IMAGE_LIB_SRC)))
 HEADER=$(HW3_HEADER) $(IMAGE_LIB_HEADER)
 CXX_OBJ=$(HW3_OBJ) $(IMAGE_LIB_OBJ)
 
-CXX=g++-9
+CXX=g++
 TARGET=hw3
 CXXFLAGS=-DGLM_FORCE_RADIANS -Wno-unused-result
-OMPFLAGS=-Xpreprocessor -fopenmp -lgomp
 OPT=-O3
 
 UNAME_S=$(shell uname -s)
@@ -33,13 +32,13 @@ endif
 all: $(TARGET)
 
 $(TARGET): $(CXX_OBJ)
-	$(CXX) $(LDFLAGS) $(OMPFLAGS) $^ $(OPT) $(LIB) -o $@
+	$(CXX) $(LDFLAGS) $^ $(OPT) $(LIB) -o $@
 
 $(HW3_OBJ):%.o: %.cpp $(HEADER)
-	$(CXX) -c $(CXXFLAGS) $(OMPFLAGS) $(OPT) $(INCLUDE) $< -o $@
+	$(CXX) -c $(CXXFLAGS) $(OPT) $(INCLUDE) $< -o $@
 
 $(IMAGE_LIB_OBJ):%.o: ../external/imageIO/%.cpp $(IMAGE_LIB_HEADER)
-	$(CXX) -c $(CXXFLAGS) $(OMPFLAGS) $(OPT) $(INCLUDE) $< -o $@
+	$(CXX) -c $(CXXFLAGS) $(OPT) $(INCLUDE) $< -o $@
 
 clean:
 	rm -rf *.o $(TARGET)

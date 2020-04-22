@@ -31,16 +31,16 @@
 #endif
 
 #include <imageIO.h>
-#include <omp.h>
+// #include <omp.h>
 
 /*
   Toggle these to enable extra credit features
 */
-#define ENABLE_REFLECTION true
-#define ENABLE_OPENMP true
-#define ENABLE_HRAA true
+#define ENABLE_REFLECTION false
+#define ENABLE_OPENMP false
+#define ENABLE_HRAA false
 
-#define RECURSION_DEPTH 10
+#define RECURSION_DEPTH 3
 #define REFLECTION_COEFFICIENT 0.08
 
 #define HRAA_CENTER 0.5
@@ -85,8 +85,6 @@ const double CAMERA_POS[3] = {0.0, 0.0, 0.0};
 double unit_x[3] = {1.0, 0.0, 0.0};
 double unit_y[3] = {0.0, 1.0, 0.0};
 double unit_z[3] = {0.0, 0.0, 1.0};
-
-unsigned char buffer[HEIGHT][WIDTH][3];
 
 /*
   Type definitions
@@ -173,6 +171,8 @@ Ray rays[HEIGHT][WIDTH];
 int num_triangles = 0;
 int num_spheres = 0;
 int num_lights = 0;
+
+unsigned char buffer[HEIGHT][WIDTH][3];
 
 void plot_pixel_display(int x,int y,unsigned char r,unsigned char g,unsigned char b);
 void plot_pixel_jpeg(int x,int y,unsigned char r,unsigned char g,unsigned char b);
@@ -312,21 +312,26 @@ void triangle_intersection (const Triangle& triangle, const Ray& ray, int obj_in
   cross(B_A, C_A, triangle_normal);
 
   // Check whether n dot d is close to zero. If so, say the ray is parallel. Otherwise, would divide by very small number
-  if (abs(dot(triangle_normal, ray.direction)) < TRI_INTERSECT_EPS) return;
+  if (abs(dot(triangle_normal, ray.direction)) < TRI_INTERSECT_EPS) {
+    return;
+  }
 
   // Compute d value
   double d = -dot(triangle.v[0].position, triangle_normal);
   double t = (-(dot(triangle_normal, ray.origin) + d)) / dot(triangle_normal, ray.direction);
-  
   // Intersection befind ray origin
-  if (t < TRI_INTERSECT_EPS) return;
+  if (t < TRI_INTERSECT_EPS) {
+    return;
+  }
 
   // Use Barycentric coordinates to check whether intersection point lies in the triangle
   // Project to plane based on triangle surface normal
   double P[3] = {ray.origin[0] + t * ray.direction[0], ray.origin[1] + t * ray.direction[1], ray.origin[2] + t * ray.direction[2]};
   double alpha, beta, gamma;
   compute_barycentric_coefficients(triangle.v[0].position, triangle.v[1].position, triangle.v[2].position, P, triangle_normal, alpha, beta, gamma);
-  if (alpha < 0 || beta < 0 || gamma < 0) return;
+  if (alpha < 0 || beta < 0 || gamma < 0) {
+    return;
+  }
   if (t < closest_t) {
     closest_t = t;
     intersection_obj_idx = obj_index;
@@ -366,7 +371,7 @@ void compute_reflected_ray (const double* in, const double* normal, double* resu
 */
 Color get_phong_color (int obj_idx, const Ray& incoming_ray, double* intersection_point, double* normal, const bool is_sphere, int depth) {
   Color color;
-  double curr_color[3] = {0.0, 0.0, 0.0};
+  float curr_color[3] = {0.0, 0.0, 0.0};
 
   double view_direction[3];
   Color curr_specular = {0.0, 0.0, 0.0};
@@ -491,7 +496,7 @@ Color get_phong_color (int obj_idx, const Ray& incoming_ray, double* intersectio
       if (intersection_obj_idx == -1 || dist_intersect > dist_light - SHADOW_RAY_EPS) {
         // For each color channel
         for (int c=0; c<3; ++c) {
-          double I = lights[i].color[c] * (diffuse[c] * std::max(0.0, std::min(1.0, dot(light_direction, normal)))
+          float I = lights[i].color[c] * (diffuse[c] * std::max(0.0, std::min(1.0, dot(light_direction, normal)))
                                           + specular[c] * pow(std::max(0.0, std::min(1.0, dot(reflected_ray, view_direction))), shininess));
           curr_color[c] += I;
         }
@@ -510,8 +515,6 @@ Color get_phong_color (int obj_idx, const Ray& incoming_ray, double* intersectio
     double next_normal[3] = {0.0, 0.0, 0.0};
     int next_intersection_obj_idx = 0;
     bool next_is_sphere = false;
-
-
 
     compute_intersection_point(reflected_ray_obj, closest_t, next_normal, next_intersection_obj_idx, next_is_sphere);
 
@@ -534,9 +537,9 @@ Color get_phong_color (int obj_idx, const Ray& incoming_ray, double* intersectio
     curr_color[i] += ambient_light[i];
   }
   // Clamp to (0.0, 1.0)
-  color.r = std::min(1.0, curr_color[0]);
-  color.g = std::min(1.0, curr_color[1]);
-  color.b = std::min(1.0, curr_color[2]);
+  color.r = std::min(1.0f, curr_color[0]);
+  color.g = std::min(1.0f, curr_color[1]);
+  color.b = std::min(1.0f, curr_color[2]);
   return color;
 }
 
@@ -544,7 +547,6 @@ Color get_phong_color (int obj_idx, const Ray& incoming_ray, double* intersectio
   Return pixel color given index of the ray
 */
 Color get_pixel_color (const Ray& ray) {
-  // std::cout << "Get_pixel_color: " << x << " , " << y << std::endl;
   double closest_t = std::numeric_limits<double>::max();
   double normal[3] = {0.0, 0.0, 0.0};
   int intersection_obj_idx = -1;
@@ -579,11 +581,11 @@ void draw_scene()
 {
   // Iterate over every pixel on the image grid, row by row
   // FIXME: If you can't compile, comment out the two lines below
-  if (ENABLE_OPENMP) {
-    omp_set_num_threads(omp_get_max_threads());
-    std::cout << "OpenMP: Number of threads used: " << omp_get_max_threads() << std::endl;
-  }
-  #pragma omp parallel for schedule(static) ordered
+  // if (ENABLE_OPENMP) {
+  //   omp_set_num_threads(omp_get_max_threads());
+  //   std::cout << "OpenMP: Number of threads used: " << omp_get_max_threads() << std::endl;
+  // }
+  // #pragma omp parallel for schedule(static) ordered
   for (int y=0; y<HEIGHT; ++y) {
     for (int x=0; x<WIDTH; ++x) {
       rays[y][x] = generate_single_ray(x, y, CAMERA_POS);
@@ -598,8 +600,8 @@ void draw_scene()
     std::vector<Color> curr_row_colors(WIDTH);
 
     // FIXME: If you can't compile, comment out the two lines below
-    if (ENABLE_OPENMP) omp_set_num_threads(omp_get_max_threads());
-    #pragma omp parallel for schedule(static) ordered
+    // if (ENABLE_OPENMP) omp_set_num_threads(omp_get_max_threads());
+    // #pragma omp parallel for schedule(static) ordered
     for (int x=0; x<WIDTH; ++x) {
       Color color = get_pixel_color(rays[y][x]);
       // High-Resolution Anti-Aliasing
@@ -654,7 +656,7 @@ void draw_scene()
     // Draw pixels. This can't be used for parallel for. Probably due to some race condition.
     for (int x=0; x<WIDTH; ++x) {
       // Vertical invert
-      plot_pixel(x, HEIGHT-y, curr_row_colors[x].r * 255, curr_row_colors[x].g * 255, curr_row_colors[x].b * 255);
+      plot_pixel(x, HEIGHT-y-1, curr_row_colors[x].r * 255, curr_row_colors[x].g * 255, curr_row_colors[x].b * 255);
     }
     glEnd();
     glFlush();
