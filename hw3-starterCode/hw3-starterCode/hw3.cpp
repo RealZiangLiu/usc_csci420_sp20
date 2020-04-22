@@ -24,17 +24,21 @@
 #include <cmath>
 #include <limits>
 #include <algorithm>
+#include <vector>
 
 #ifdef WIN32
   #define strcasecmp _stricmp
 #endif
 
 #include <imageIO.h>
+#include <omp.h>
 
 /*
   Toggle these to enable extra credit features
 */
 #define ENABLE_REFLECTION true
+#define ENABLE_OPENMP true
+#define ENABLE_HRAA true
 
 #define RECURSION_DEPTH 5
 #define REFLECTION_COEFFICIENT 0.08
@@ -69,7 +73,7 @@ int mode = MODE_DISPLAY;
 #define FOV_ANGLE_HALF (fov / 2.0 * M_PI / 180.0)
 
 #define ASPECT_RATIO (1.0 * WIDTH / HEIGHT)
-#define PIXEL_LENGTH (2.0 * tan(FOV_ANGLE_HALF) / HEIGHT)
+#define PIXEL_LENGTH (2.0 * tan(FOV_ANGLE_HALF) / HEIGHT) // side length of a pixel
 #define TOP_LEFT_X (-ASPECT_RATIO * tan(FOV_ANGLE_HALF) + PIXEL_LENGTH / 2.0)
 #define TOP_LEFT_Y (tan(FOV_ANGLE_HALF) + PIXEL_LENGTH / 2.0)
 
@@ -84,13 +88,6 @@ unsigned char buffer[HEIGHT][WIDTH][3];
 /*
   Type definitions
 */
-struct Point
-{
-  double x;
-  double y;
-  double z;
-};
-
 struct Vertex
 {
   double position[3];
@@ -270,7 +267,7 @@ void compute_barycentric_coefficients (const double* A, const double* B, const d
 /*
   Compute intersection of ray and sphere
 */
-void sphere_intersection (Sphere& sphere, Ray& ray, const int obj_index, double& closest_t, double* normal, int& intersection_obj_idx, bool& is_sphere) {
+void sphere_intersection (const Sphere& sphere, const Ray& ray, const int obj_index, double& closest_t, double* normal, int& intersection_obj_idx, bool& is_sphere) {
   // Iterate over all spheres
   double b = 2 * (ray.direction[0] * (ray.origin[0] - sphere.position[0])
                 + ray.direction[1] * (ray.origin[1] - sphere.position[1])
@@ -281,9 +278,8 @@ void sphere_intersection (Sphere& sphere, Ray& ray, const int obj_index, double&
            - sphere.radius * sphere.radius;
 
   // If this is less than 0 then no intersection
-  if (b*b - 4*c < 0) {
-    return;
-  }
+  if (b*b - 4*c < 0) return;
+
   double t_0 = (-b - sqrt(b*b - 4*c)) / 2;
   double t_1 = (-b + sqrt(b*b - 4*c)) / 2;
   t_0 = std::min(t_0, t_1);
@@ -304,9 +300,8 @@ void sphere_intersection (Sphere& sphere, Ray& ray, const int obj_index, double&
 /*
   Compute intersection of ray and triangle
 */
-void triangle_intersection (Triangle& triangle, Ray& ray, int obj_index, double& closest_t, double* normal, int& intersection_obj_idx, bool& is_sphere) {
+void triangle_intersection (const Triangle& triangle, const Ray& ray, int obj_index, double& closest_t, double* normal, int& intersection_obj_idx, bool& is_sphere) {
   double triangle_normal[3];
-
   // Compute normal of the triangle using vectors B-A and C-A
   double B_A[3], C_A[3];
   sub(triangle.v[1].position, triangle.v[0].position, B_A);
@@ -314,31 +309,21 @@ void triangle_intersection (Triangle& triangle, Ray& ray, int obj_index, double&
   cross(B_A, C_A, triangle_normal);
 
   // Check whether n dot d is close to zero. If so, say the ray is parallel. Otherwise, would divide by very small number
-  if (abs(dot(triangle_normal, ray.direction)) < TRI_INTERSECT_EPS) {
-    return;
-  }
+  if (abs(dot(triangle_normal, ray.direction)) < TRI_INTERSECT_EPS) return;
 
   // Compute d value
   double d = -dot(triangle.v[0].position, triangle_normal);
   double t = (-(dot(triangle_normal, ray.origin) + d)) / dot(triangle_normal, ray.direction);
-
+  
   // Intersection befind ray origin
-  if (t < TRI_INTERSECT_EPS) {
-    return;
-  }
+  if (t < TRI_INTERSECT_EPS) return;
 
   // Use Barycentric coordinates to check whether intersection point lies in the triangle
-  
   // Project to plane based on triangle surface normal
   double P[3] = {ray.origin[0] + t * ray.direction[0], ray.origin[1] + t * ray.direction[1], ray.origin[2] + t * ray.direction[2]};
-
   double alpha, beta, gamma;
   compute_barycentric_coefficients(triangle.v[0].position, triangle.v[1].position, triangle.v[2].position, P, triangle_normal, alpha, beta, gamma);
-  
-  if (alpha < 0 || beta < 0 || gamma < 0) {
-    return;
-  }
-
+  if (alpha < 0 || beta < 0 || gamma < 0) return;
   if (t < closest_t) {
     closest_t = t;
     intersection_obj_idx = obj_index;
@@ -353,7 +338,7 @@ void triangle_intersection (Triangle& triangle, Ray& ray, int obj_index, double&
 /*
   Compute intersection of ray with all objects in scene.
 */
-void compute_intersection_point (Ray& ray, double& closest_t, double* normal, int& intersection_obj_idx, bool& is_sphere) {
+void compute_intersection_point (const Ray& ray, double& closest_t, double* normal, int& intersection_obj_idx, bool& is_sphere) {
   // Intersect spheres
   for (int i=0; i<num_spheres; ++i) {
     sphere_intersection(spheres[i], ray, i, closest_t, normal, intersection_obj_idx, is_sphere);
@@ -376,7 +361,7 @@ void compute_reflected_ray (const double* in, const double* normal, double* resu
 /*
   Return the color at the intersection point using phong model
 */
-Color get_phong_color (int obj_idx, Ray& incoming_ray, double* intersection_point, double* normal, const bool is_sphere, int depth) {
+Color get_phong_color (int obj_idx, const Ray& incoming_ray, double* intersection_point, double* normal, const bool is_sphere, int depth) {
   Color color;
   double curr_color[3] = {0.0, 0.0, 0.0};
 
@@ -541,10 +526,6 @@ Color get_phong_color (int obj_idx, Ray& incoming_ray, double* intersection_poin
     }
   }
 
-
-
-
-
   // Add ambient light
   for (int i=0; i<3; ++i) {
     curr_color[i] += ambient_light[i];
@@ -559,7 +540,7 @@ Color get_phong_color (int obj_idx, Ray& incoming_ray, double* intersection_poin
 /*
   Return pixel color given index of the ray
 */
-Color get_pixel_color (int x, int y) {
+Color get_pixel_color (const Ray& ray) {
   // std::cout << "Get_pixel_color: " << x << " , " << y << std::endl;
   double closest_t = std::numeric_limits<double>::max();
   double normal[3] = {0.0, 0.0, 0.0};
@@ -568,7 +549,7 @@ Color get_pixel_color (int x, int y) {
 
   Color color = {0.0, 0.0, 0.0};
 
-  compute_intersection_point(rays[y][x], closest_t, normal, intersection_obj_idx, is_sphere);
+  compute_intersection_point(ray, closest_t, normal, intersection_obj_idx, is_sphere);
 
   // Set color based on closest_t and intersection normal.
   // If found intersection then use phong model to update color.
@@ -577,10 +558,10 @@ Color get_pixel_color (int x, int y) {
     // Compute intersection point
     double intersection_point[3];
     for (int i=0; i<3; ++i) {
-      intersection_point[i] = rays[y][x].origin[i] + closest_t * rays[y][x].direction[i];
+      intersection_point[i] = ray.origin[i] + closest_t * ray.direction[i];
     }
 
-    color = get_phong_color(intersection_obj_idx, rays[y][x], intersection_point, normal, is_sphere, RECURSION_DEPTH);
+    color = get_phong_color(intersection_obj_idx, ray, intersection_point, normal, is_sphere, RECURSION_DEPTH);
   } else {
     color.r = 1.0;
     color.g = 1.0;
@@ -594,6 +575,12 @@ Color get_pixel_color (int x, int y) {
 void draw_scene()
 {
   // Iterate over every pixel on the image grid, row by row
+  // FIXME: If you can't compile, comment out the two lines below
+  if (ENABLE_OPENMP) {
+    omp_set_num_threads(omp_get_max_threads());
+    std::cout << "OpenMP: Number of threads used: " << omp_get_max_threads() << std::endl;
+  }
+  #pragma omp parallel for schedule(static) ordered
   for (int y=0; y<HEIGHT; ++y) {
     for (int x=0; x<WIDTH; ++x) {
       rays[y][x] = generate_single_ray(x, y, CAMERA_POS);
@@ -604,17 +591,32 @@ void draw_scene()
   for (int y=0; y<HEIGHT; ++y) {
     glPointSize(2.0);
     glBegin(GL_POINTS);
+    // Store vector of colors
+    std::vector<Color> curr_row_colors(WIDTH);
 
+    // FIXME: If you can't compile, comment out the two lines below
+    if (ENABLE_OPENMP) omp_set_num_threads(omp_get_max_threads());
+    #pragma omp parallel for schedule(static) ordered
     for (int x=0; x<WIDTH; ++x) {
-      Color color = get_pixel_color(x, y);
+      Color color = get_pixel_color(rays[y][x]);
+      // High-Resolution Anti-Aliasing
+      if (ENABLE_HRAA) {
+        // Take samples at four corners of the current pixel
+        // Top left corner
+        // double direction_TR[3] = {rays[y][x].directions[]}
+        // Ray ray_TR(double[3](0.0, 0.0, 0.0));
+      }
+      curr_row_colors[x] = color;
+    }
+
+    // Draw pixels. This can't be used for parallel for. Probably due to some race condition.
+    for (int x=0; x<WIDTH; ++x) {
       // Vertical invert
-      plot_pixel(x, HEIGHT - y, color.r * 255, color.g * 255, color.b * 255);
+      plot_pixel(x, HEIGHT-y, curr_row_colors[x].r * 255, curr_row_colors[x].g * 255, curr_row_colors[x].b * 255);
     }
     glEnd();
     glFlush();
   }
-
-
   printf("Done!\n"); fflush(stdout);
 }
 
