@@ -21,13 +21,18 @@ Feature:                                 Status: finish? (yes/no)
 
 5) Shadows rays                           yes
 
-6) Still images                           NOT YET
+6) Still images                           yes
+
+                                          000-004.jpg:   Core credit rendering
+                                          005-006.jpg:   Recursive ray tracing reflection
+                                          007.jpg:       High-resolution anti-aliasing (compare with 003.jpg)
+                                          008.jpg:       Soft shadow demo
    
 7) Extra Credit (up to 20 points)
 ========================================================================================================================================
 1. Recursive ray tracing to allow reflections.
    To test this, change the value of the variable "ENABLE_REFLECTION" at the very beginning of hw3.cpp to true and recompile with "make".
-
+   Demo: 
 ========================================================================================================================================
 2. Parallelization using OpenMP. This allows parallel computation of pixel colors to hugely speed up rendering.
    The hw3.cpp already includes code for this, but it requires "libomp". I modified the makefile to use "g++-9" because using vanilla "g++"
@@ -41,4 +46,6 @@ Feature:                                 Status: finish? (yes/no)
 3. HRAA (High-resolution Anti-Aliasing). Achieved by shooting 4 additional rays for each pixel and taking the weighted average when computing
 final colors. This is most visible in "table.scene", illustrated in screenshots: TODO: fill in img number
 ========================================================================================================================================
-4. 
+4. Soft shadow using modified version of test2.scene, using a cluster of 36 lights in place of the original 1 light. 
+   Test file: "soft_test2.scene"
+========================================================================================================================================

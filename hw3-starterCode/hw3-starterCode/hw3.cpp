@@ -1,7 +1,7 @@
 /* **************************
  * CSCI 420
  * Assignment 3 Raytracer
- * Name: <Your name here>
+ * Name: Ziang Liu 9114346039
  * *************************
 */
 
@@ -31,7 +31,7 @@
 #endif
 
 #include <imageIO.h>
-// #include <omp.h>
+#include <omp.h>
 
 /*
   Toggle these to enable extra credit features
@@ -581,11 +581,11 @@ void draw_scene()
 {
   // Iterate over every pixel on the image grid, row by row
   // FIXME: If you can't compile, comment out the two lines below
-  // if (ENABLE_OPENMP) {
-  //   omp_set_num_threads(omp_get_max_threads());
-  //   std::cout << "OpenMP: Number of threads used: " << omp_get_max_threads() << std::endl;
-  // }
-  // #pragma omp parallel for schedule(static) ordered
+  if (ENABLE_OPENMP) {
+    omp_set_num_threads(omp_get_max_threads());
+    std::cout << "OpenMP: Number of threads used: " << omp_get_max_threads() << std::endl;
+  }
+  #pragma omp parallel for schedule(static) ordered
   for (int y=0; y<HEIGHT; ++y) {
     for (int x=0; x<WIDTH; ++x) {
       rays[y][x] = generate_single_ray(x, y, CAMERA_POS);
@@ -600,8 +600,8 @@ void draw_scene()
     std::vector<Color> curr_row_colors(WIDTH);
 
     // FIXME: If you can't compile, comment out the two lines below
-    // if (ENABLE_OPENMP) omp_set_num_threads(omp_get_max_threads());
-    // #pragma omp parallel for schedule(static) ordered
+    if (ENABLE_OPENMP) omp_set_num_threads(omp_get_max_threads());
+    #pragma omp parallel for schedule(static) ordered
     for (int x=0; x<WIDTH; ++x) {
       Color color = get_pixel_color(rays[y][x]);
       // High-Resolution Anti-Aliasing
