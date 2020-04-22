@@ -32,6 +32,14 @@
 #include <imageIO.h>
 
 /*
+  Toggle these to enable extra credit features
+*/
+#define ENABLE_REFLECTION true
+
+#define RECURSION_DEPTH 5
+#define REFLECTION_COEFFICIENT 0.08
+
+/*
   Global constant parameters
 */
 #define MAX_TRIANGLES 20000
@@ -39,10 +47,10 @@
 #define MAX_LIGHTS 100
 
 // Epsilon value for shadow ray check
-#define SHADOW_RAY_EPS 0.00001
+#define SHADOW_RAY_EPS 0.0001
 
 // Epsilon for triangle_parallel check
-#define TRI_INTERSECT_EPS 0.00001
+#define TRI_INTERSECT_EPS 0.0001
 
 char * filename = NULL;
 
@@ -368,17 +376,27 @@ void compute_reflected_ray (const double* in, const double* normal, double* resu
 /*
   Return the color at the intersection point using phong model
 */
-void get_phong_color (Color& color, int obj_idx, double* intersection_point, double* normal, const bool is_sphere) {
+Color get_phong_color (int obj_idx, Ray& incoming_ray, double* intersection_point, double* normal, const bool is_sphere, int depth) {
+  Color color;
   double curr_color[3] = {0.0, 0.0, 0.0};
+
+  double view_direction[3];
+  Color curr_specular = {0.0, 0.0, 0.0};
+  
+  // compute_direction_vector(intersection_point, CAMERA_POS, incoming_ray.direction);
+  for (int i=0; i<3; ++i) {
+    view_direction[i] = -incoming_ray.direction[i];
+  }
   // If the intersecting object is a sphere
   if (is_sphere) {
+    // Set current specular color for use in reflection
+    curr_specular.r = spheres[obj_idx].color_specular[0];
+    curr_specular.g = spheres[obj_idx].color_specular[1];
+    curr_specular.b = spheres[obj_idx].color_specular[2];
     // Loop through all lights
     for (int i=0; i<num_lights; ++i) {
       double light_direction[3];
       compute_direction_vector(intersection_point, lights[i].position, light_direction);
-
-      double view_direction[3];
-      compute_direction_vector(intersection_point, CAMERA_POS, view_direction);
       
       double reflected_ray[3];
       compute_reflected_ray(light_direction, normal, reflected_ray);
@@ -388,7 +406,8 @@ void get_phong_color (Color& color, int obj_idx, double* intersection_point, dou
       double closest_t = std::numeric_limits<double>::max();
       int intersection_obj_idx = -1;
       bool is_sphere_not_used = false;
-      compute_intersection_point(shadow_ray, closest_t, normal, intersection_obj_idx, is_sphere_not_used);
+      double normal_not_used[3];
+      compute_intersection_point(shadow_ray, closest_t, normal_not_used, intersection_obj_idx, is_sphere_not_used);
 
       // check distantce to intersection and to light source
       double dist_intersect = 0.0;
@@ -445,15 +464,17 @@ void get_phong_color (Color& color, int obj_idx, double* intersection_point, dou
       alpha * triangles[obj_idx].v[0].color_specular[2] + beta * triangles[obj_idx].v[1].color_specular[2] + gamma * triangles[obj_idx].v[2].color_specular[2]
     };
 
+    // Copy over specular color for future use
+    curr_specular.r = specular[0];
+    curr_specular.g = specular[1];
+    curr_specular.b = specular[2];
+
     double shininess = alpha * triangles[obj_idx].v[0].shininess + beta * triangles[obj_idx].v[1].shininess + gamma * triangles[obj_idx].v[2].shininess;
 
     // Loop through all lights
     for (int i=0; i<num_lights; ++i) {
       double light_direction[3];
       compute_direction_vector(intersection_point, lights[i].position, light_direction);
-
-      double view_direction[3];
-      compute_direction_vector(intersection_point, CAMERA_POS, view_direction);
       
       double reflected_ray[3];
       compute_reflected_ray(light_direction, normal, reflected_ray);
@@ -490,6 +511,40 @@ void get_phong_color (Color& color, int obj_idx, double* intersection_point, dou
     }
   }
 
+  // Recursively call next level
+  Color next_color = {0.0, 0.0, 0.0};
+  if (depth > 0 && ENABLE_REFLECTION) {
+    double reflected_ray[3];
+    compute_reflected_ray(view_direction, normal, reflected_ray);
+    Ray reflected_ray_obj(intersection_point, reflected_ray);
+
+    double closest_t = std::numeric_limits<double>::max();
+    double next_normal[3] = {0.0, 0.0, 0.0};
+    int next_intersection_obj_idx = 0;
+    bool next_is_sphere = false;
+
+
+
+    compute_intersection_point(reflected_ray_obj, closest_t, next_normal, next_intersection_obj_idx, next_is_sphere);
+
+    if (next_intersection_obj_idx != -1) {
+      // Compute intersection point
+      double next_intersection_point[3];
+      for (int i=0; i<3; ++i) {
+        next_intersection_point[i] = reflected_ray_obj.origin[i] + closest_t * reflected_ray_obj.direction[i];
+      }
+      next_color = get_phong_color(next_intersection_obj_idx, reflected_ray_obj, next_intersection_point, next_normal, next_is_sphere, --depth);
+      
+      curr_color[0] += REFLECTION_COEFFICIENT * next_color.r;
+      curr_color[1] += REFLECTION_COEFFICIENT * next_color.g;
+      curr_color[2] += REFLECTION_COEFFICIENT * next_color.b;
+    }
+  }
+
+
+
+
+
   // Add ambient light
   for (int i=0; i<3; ++i) {
     curr_color[i] += ambient_light[i];
@@ -498,6 +553,7 @@ void get_phong_color (Color& color, int obj_idx, double* intersection_point, dou
   color.r = std::min(1.0, curr_color[0]);
   color.g = std::min(1.0, curr_color[1]);
   color.b = std::min(1.0, curr_color[2]);
+  return color;
 }
 
 /*
@@ -510,7 +566,7 @@ Color get_pixel_color (int x, int y) {
   int intersection_obj_idx = -1;
   bool is_sphere = false;
 
-  Color color = {1.0, 1.0, 1.0};
+  Color color = {0.0, 0.0, 0.0};
 
   compute_intersection_point(rays[y][x], closest_t, normal, intersection_obj_idx, is_sphere);
 
@@ -523,8 +579,14 @@ Color get_pixel_color (int x, int y) {
     for (int i=0; i<3; ++i) {
       intersection_point[i] = rays[y][x].origin[i] + closest_t * rays[y][x].direction[i];
     }
-    get_phong_color(color, intersection_obj_idx, intersection_point, normal, is_sphere);
+
+    color = get_phong_color(intersection_obj_idx, rays[y][x], intersection_point, normal, is_sphere, RECURSION_DEPTH);
+  } else {
+    color.r = 1.0;
+    color.g = 1.0;
+    color.b = 1.0;
   }
+
   return color;
 }
 
