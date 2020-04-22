@@ -40,8 +40,11 @@
 #define ENABLE_OPENMP true
 #define ENABLE_HRAA true
 
-#define RECURSION_DEPTH 5
+#define RECURSION_DEPTH 10
 #define REFLECTION_COEFFICIENT 0.08
+
+#define HRAA_CENTER 0.5
+#define HRAA_CORNER ((1.0 - HRAA_CENTER) / 4.0)
 
 /*
   Global constant parameters
@@ -603,10 +606,49 @@ void draw_scene()
       if (ENABLE_HRAA) {
         // Take samples at four corners of the current pixel
         // Top left corner
-        // double direction_TR[3] = {rays[y][x].directions[]}
-        // Ray ray_TR(double[3](0.0, 0.0, 0.0));
+        double direction_TL[3] = { rays[y][x].direction[0] - PIXEL_LENGTH/2.0,
+                                   rays[y][x].direction[1] + PIXEL_LENGTH/2.0,
+                                   rays[y][x].direction[2]};
+        normalize(direction_TL);
+        Ray ray_TL(rays[y][x].origin, direction_TL);
+        // Top right corner
+        double direction_TR[3] = { rays[y][x].direction[0] + PIXEL_LENGTH/2.0,
+                                   rays[y][x].direction[1] + PIXEL_LENGTH/2.0,
+                                   rays[y][x].direction[2]};
+        normalize(direction_TR);
+        Ray ray_TR(rays[y][x].origin, direction_TR);
+        // Bottom left corner
+        double direction_BL[3] = { rays[y][x].direction[0] - PIXEL_LENGTH/2.0,
+                                   rays[y][x].direction[1] - PIXEL_LENGTH/2.0,
+                                   rays[y][x].direction[2]};
+        normalize(direction_BL);
+        Ray ray_BL(rays[y][x].origin, direction_BL);
+        // Bottom right corner
+        double direction_BR[3] = { rays[y][x].direction[0] + PIXEL_LENGTH/2.0,
+                                   rays[y][x].direction[1] - PIXEL_LENGTH/2.0,
+                                   rays[y][x].direction[2]};
+        normalize(direction_BR);
+        Ray ray_BR(rays[y][x].origin, direction_BR);
+        
+        // Set color with weight average
+        curr_row_colors[x].r = HRAA_CENTER * color.r
+                             + HRAA_CORNER * get_pixel_color(ray_TL).r
+                             + HRAA_CORNER * get_pixel_color(ray_TR).r
+                             + HRAA_CORNER * get_pixel_color(ray_BL).r
+                             + HRAA_CORNER * get_pixel_color(ray_BR).r;
+        curr_row_colors[x].g = HRAA_CENTER * color.g
+                             + HRAA_CORNER * get_pixel_color(ray_TL).g
+                             + HRAA_CORNER * get_pixel_color(ray_TR).g
+                             + HRAA_CORNER * get_pixel_color(ray_BL).g
+                             + HRAA_CORNER * get_pixel_color(ray_BR).g;
+        curr_row_colors[x].b = HRAA_CENTER * color.b
+                             + HRAA_CORNER * get_pixel_color(ray_TL).b
+                             + HRAA_CORNER * get_pixel_color(ray_TR).b
+                             + HRAA_CORNER * get_pixel_color(ray_BL).b
+                             + HRAA_CORNER * get_pixel_color(ray_BR).b;
+      } else {
+        curr_row_colors[x] = color;
       }
-      curr_row_colors[x] = color;
     }
 
     // Draw pixels. This can't be used for parallel for. Probably due to some race condition.

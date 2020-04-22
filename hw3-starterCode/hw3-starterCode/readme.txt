@@ -38,4 +38,7 @@ Feature:                                 Status: finish? (yes/no)
    "ENABLE_OPENMP" variable to "true", and recompile. This would allow the execution of OpenMP codes. The program also prints number of 
    threads used during execution in command line.
 ========================================================================================================================================
-3. 
+3. HRAA (High-resolution Anti-Aliasing). Achieved by shooting 4 additional rays for each pixel and taking the weighted average when computing
+final colors. This is most visible in "table.scene", illustrated in screenshots: TODO: fill in img number
+========================================================================================================================================
+4. 
